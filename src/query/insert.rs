@@ -4,7 +4,6 @@ use std::marker::PhantomData;
 
 use crate::entity::ActiveModelTrait;
 use crate::entity::EntityTrait;
-use crate::entity::FromRow;
 use crate::error::Error;
 use crate::error::Result;
 use crate::value::Value;
@@ -82,7 +81,7 @@ impl<E: EntityTrait> Insert<E> {
     /// # Errors
     ///
     /// Returns an error if any insert fails.
-    pub async fn exec(self, conn: &turso::Connection) -> Result<u64> {
+    pub async fn exec(self, conn: &crate::Connection) -> Result<u64> {
         if self.models.is_empty() {
             return Ok(0);
         }
@@ -99,43 +98,6 @@ impl<E: EntityTrait> Insert<E> {
         Ok(total_affected)
     }
 
-    /// Execute the insert and return the inserted row
-    ///
-    /// Uses the SQL `RETURNING` clause to get the complete row back,
-    /// including any auto-generated values like primary keys or defaults.
-    ///
-    /// Note: Only inserts the first model if multiple were added.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if no models were added or if the insert fails.
-    pub async fn exec_with_returning(self, conn: &turso::Connection) -> Result<E::Model> {
-        if self.models.is_empty() {
-            return Err(Error::Query("No models to insert".to_string()));
-        }
-
-        let model = self.models.first().unwrap();
-        let (columns, values) = model.get_insert_columns_and_values();
-
-        let sql = if columns.is_empty() {
-            format!("INSERT INTO {} DEFAULT VALUES RETURNING {}", E::table_name(), E::all_columns())
-        } else {
-            let placeholders: Vec<&str> = columns.iter().map(|_| "?").collect();
-            format!(
-                "INSERT INTO {} ({}) VALUES ({}) RETURNING {}",
-                E::table_name(),
-                columns.join(", "),
-                placeholders.join(", "),
-                E::all_columns()
-            )
-        };
-
-        let params: Vec<turso::Value> = values.into_iter().collect();
-        let mut rows = conn.query(&sql, params).await?;
-
-        if let Some(row) = rows.next().await? { E::Model::from_row(&row) } else { Err(Error::NoRowsAffected) }
-    }
-
     /// Execute the insert and return the last inserted ID
     ///
     /// Uses SQLite's `last_insert_rowid()` function to get the ID of
@@ -147,7 +109,7 @@ impl<E: EntityTrait> Insert<E> {
     ///
     /// Returns an error if no models were added, if the insert fails,
     /// or if the ID cannot be retrieved.
-    pub async fn exec_with_last_insert_id(self, conn: &turso::Connection) -> Result<i64> {
+    pub async fn exec_with_last_insert_id(self, conn: &crate::Connection) -> Result<i64> {
         if self.models.is_empty() {
             return Err(Error::Query("No models to insert".to_string()));
         }
@@ -157,19 +119,7 @@ impl<E: EntityTrait> Insert<E> {
         let params: Vec<turso::Value> = params.into_iter().collect();
 
         conn.execute(&sql, params).await?;
-
-        // Query last_insert_rowid()
-        let mut rows = conn.query("SELECT last_insert_rowid()", ()).await?;
-
-        if let Some(row) = rows.next().await? {
-            let value = row.get_value(0)?;
-            match value {
-                Value::Integer(id) => Ok(id),
-                _ => Err(Error::Query("Failed to get last insert ID".to_string())),
-            }
-        } else {
-            Err(Error::Query("Failed to get last insert ID".to_string()))
-        }
+        Ok(conn.last_insert_rowid())
     }
 }
 
@@ -206,7 +156,7 @@ impl<E: EntityTrait> InsertMany<E> {
     ///
     /// Returns an error if any insert fails. Already-inserted records
     /// are not rolled back unless using a transaction.
-    pub async fn exec(self, conn: &turso::Connection) -> Result<u64> {
+    pub async fn exec(self, conn: &crate::Connection) -> Result<u64> {
         if self.models.is_empty() {
             return Ok(0);
         }

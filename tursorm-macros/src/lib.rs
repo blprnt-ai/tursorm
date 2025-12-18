@@ -382,7 +382,7 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
         }
 
         impl tursorm::FromRow for #name {
-            fn from_row(row: &turso::Row) -> tursorm::Result<Self> {
+            fn from_row(row: &tursorm::Row) -> tursorm::Result<Self> {
                 Ok(Self {
                     #(#from_row_fields),*
                 })

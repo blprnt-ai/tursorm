@@ -130,7 +130,7 @@ impl<E: EntityTrait> Update<E> {
     /// - No columns are set to update
     /// - The model has no primary key set (when using `new()` without filters)
     /// - The query execution fails
-    pub async fn exec(self, conn: &turso::Connection) -> Result<u64> {
+    pub async fn exec(self, conn: &crate::Connection) -> Result<u64> {
         let (sql, params) = self.build()?;
         let params: Vec<turso::Value> = params.into_iter().collect();
         let affected = conn.execute(&sql, params).await?;
@@ -148,7 +148,7 @@ impl<E: EntityTrait> Update<E> {
     /// # Errors
     ///
     /// Returns an error if no rows were affected or if the query fails.
-    pub async fn exec_with_returning(self, conn: &turso::Connection) -> Result<E::Model> {
+    pub async fn exec_with_returning(self, conn: &crate::Connection) -> Result<E::Model> {
         let (base_sql, params) = self.build()?;
         let sql = format!("{} RETURNING {}", base_sql, E::all_columns());
 

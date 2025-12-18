@@ -74,7 +74,7 @@ impl<E: EntityTrait> Delete<E> {
     /// # Errors
     ///
     /// Returns an error if the query execution fails.
-    pub async fn exec(self, conn: &turso::Connection) -> Result<u64> {
+    pub async fn exec(self, conn: &crate::Connection) -> Result<u64> {
         let (sql, params) = self.build();
         let params: Vec<turso::Value> = params.into_iter().collect();
         let affected = conn.execute(&sql, params).await?;
@@ -99,7 +99,7 @@ impl<E: EntityTrait> Default for Delete<E> {
 /// let user = User::find_by_id(1).one(&conn).await?.unwrap();
 /// delete_by_model::<UserEntity>(&conn, &user).await?;
 /// ```
-pub async fn delete_by_model<E: EntityTrait>(conn: &turso::Connection, model: &E::Model) -> Result<u64>
+pub async fn delete_by_model<E: EntityTrait>(conn: &crate::Connection, model: &E::Model) -> Result<u64>
 where E::Model: ModelTrait {
     let pk_value = model.get_primary_key_value();
     let pk_column = E::primary_key();

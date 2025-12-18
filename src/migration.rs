@@ -280,7 +280,7 @@ impl Migrator {
     /// # Errors
     ///
     /// Returns an error if the migration cannot be applied.
-    pub async fn migrate<E: EntityTrait>(conn: &turso::Connection) -> Result<SchemaDiff>
+    pub async fn migrate<E: EntityTrait>(conn: &crate::Connection) -> Result<SchemaDiff>
     where E::Column: 'static {
         Self::migrate_with_options::<E>(conn, MigrationOptions::default()).await
     }
@@ -294,7 +294,7 @@ impl Migrator {
     ///
     /// Returns an error if the migration cannot be applied.
     pub async fn migrate_with_options<E: EntityTrait>(
-        conn: &turso::Connection,
+        conn: &crate::Connection,
         options: MigrationOptions,
     ) -> Result<SchemaDiff>
     where
@@ -308,13 +308,13 @@ impl Migrator {
     ///
     /// Applies migrations for all provided entity schemas in order.
     /// Changes from all entities are combined into a single `SchemaDiff`.
-    pub async fn migrate_all(conn: &turso::Connection, schemas: &[EntitySchema]) -> Result<SchemaDiff> {
+    pub async fn migrate_all(conn: &crate::Connection, schemas: &[EntitySchema]) -> Result<SchemaDiff> {
         Self::migrate_all_with_options(conn, schemas, MigrationOptions::default()).await
     }
 
     /// Migrate multiple entities with custom options
     pub async fn migrate_all_with_options(
-        conn: &turso::Connection,
+        conn: &crate::Connection,
         schemas: &[EntitySchema],
         options: MigrationOptions,
     ) -> Result<SchemaDiff> {
@@ -334,7 +334,7 @@ impl Migrator {
     ///
     /// Queries SQLite's `PRAGMA table_info` to retrieve column definitions.
     /// Returns `None` if the table doesn't exist.
-    pub async fn introspect_table(conn: &turso::Connection, table_name: &str) -> Result<Option<DbTableInfo>> {
+    pub async fn introspect_table(conn: &crate::Connection, table_name: &str) -> Result<Option<DbTableInfo>> {
         // Check if table exists
         let exists_sql = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?";
         let mut rows = conn.query(exists_sql, [table_name]).await?;
@@ -402,7 +402,7 @@ impl Migrator {
     }
 
     /// Calculate the diff between entity schema and database schema
-    pub async fn diff<E: EntityTrait>(conn: &turso::Connection) -> Result<SchemaDiff>
+    pub async fn diff<E: EntityTrait>(conn: &crate::Connection) -> Result<SchemaDiff>
     where E::Column: 'static {
         let schema = EntitySchema::of::<E>();
         Self::diff_schema(conn, &schema, &MigrationOptions::default()).await
@@ -410,7 +410,7 @@ impl Migrator {
 
     /// Calculate diff for a schema
     async fn diff_schema(
-        conn: &turso::Connection,
+        conn: &crate::Connection,
         entity_schema: &EntitySchema,
         options: &MigrationOptions,
     ) -> Result<SchemaDiff> {
@@ -517,22 +517,24 @@ impl Migrator {
                 }
 
                 // Check for unique constraints that need to be added
-                for entity_col in &entity_schema.columns {
-                    if entity_col.is_unique && !entity_col.is_primary_key {
-                        // Check if unique index exists
-                        let index_name = format!("idx_{}_{}_unique", table_name, entity_col.name);
-                        let has_index = Self::index_exists(conn, &index_name).await?;
+                if !conn.is_mvcc_enabled() {
+                    for entity_col in &entity_schema.columns {
+                        if entity_col.is_unique && !entity_col.is_primary_key {
+                            // Check if unique index exists
+                            let index_name = format!("idx_{}_{}_unique", table_name, entity_col.name);
+                            let has_index = Self::index_exists(conn, &index_name).await?;
 
-                        if !has_index {
-                            let sql = format!(
-                                "CREATE UNIQUE INDEX IF NOT EXISTS {} ON {} ({})",
-                                index_name, table_name, entity_col.name
-                            );
-                            diff.add_change(SchemaChange::CreateIndex {
-                                table_name: table_name.to_string(),
-                                index_name,
-                                sql,
-                            });
+                            if !has_index {
+                                let sql = format!(
+                                    "CREATE UNIQUE INDEX IF NOT EXISTS {} ON {} ({})",
+                                    index_name, table_name, entity_col.name
+                                );
+                                diff.add_change(SchemaChange::CreateIndex {
+                                    table_name: table_name.to_string(),
+                                    index_name,
+                                    sql,
+                                });
+                            }
                         }
                     }
                 }
@@ -544,7 +546,7 @@ impl Migrator {
 
     /// Migrate schema
     async fn migrate_schema(
-        conn: &turso::Connection,
+        conn: &crate::Connection,
         entity_schema: &EntitySchema,
         options: &MigrationOptions,
     ) -> Result<SchemaDiff> {
@@ -572,7 +574,7 @@ impl Migrator {
     }
 
     /// Check if an index exists
-    async fn index_exists(conn: &turso::Connection, index_name: &str) -> Result<bool> {
+    async fn index_exists(conn: &crate::Connection, index_name: &str) -> Result<bool> {
         let sql = "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?";
         let mut rows = conn.query(sql, [index_name]).await?;
 

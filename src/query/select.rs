@@ -142,7 +142,7 @@ impl<E: EntityTrait> Select<E> {
     ///
     /// Returns an error if the query execution fails or if any row
     /// cannot be converted to the model type.
-    pub async fn all(self, conn: &turso::Connection) -> Result<Vec<E::Model>> {
+    pub async fn all(self, conn: &crate::Connection) -> Result<Vec<E::Model>> {
         let (sql, params) = self.build();
         let params: Vec<turso::Value> = params.into_iter().collect();
 
@@ -165,7 +165,7 @@ impl<E: EntityTrait> Select<E> {
     ///
     /// Returns an error if the query execution fails or if the row
     /// cannot be converted to the model type.
-    pub async fn one(self, conn: &turso::Connection) -> Result<Option<E::Model>> {
+    pub async fn one(self, conn: &crate::Connection) -> Result<Option<E::Model>> {
         let query = self.limit(1);
         let (sql, params) = query.build();
         let params: Vec<turso::Value> = params.into_iter().collect();
@@ -183,7 +183,7 @@ impl<E: EntityTrait> Select<E> {
     /// # Errors
     ///
     /// Returns an error if the query execution fails.
-    pub async fn count(self, conn: &turso::Connection) -> Result<i64> {
+    pub async fn count(self, conn: &crate::Connection) -> Result<i64> {
         let mut sql = format!("SELECT COUNT(*) FROM {}", E::table_name());
         let mut params = Vec::new();
 
@@ -220,7 +220,7 @@ impl<E: EntityTrait> Select<E> {
     /// # Errors
     ///
     /// Returns an error if the query execution fails.
-    pub async fn exists(self, conn: &turso::Connection) -> Result<bool> {
+    pub async fn exists(self, conn: &crate::Connection) -> Result<bool> {
         let count = self.limit(1).count(conn).await?;
         Ok(count > 0)
     }

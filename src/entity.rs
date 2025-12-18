@@ -288,15 +288,21 @@ pub trait ActiveModelTrait: Default + Clone + Send + Sync + Sized + 'static {
     /// let user = new_user.insert(&conn).await?;
     /// println!("Created user with ID: {}", user.id);
     /// ```
-    async fn insert(self, conn: &turso::Connection) -> Result<<Self::Entity as EntityTrait>::Model>
+    async fn insert(self, conn: &crate::Connection) -> Result<<Self::Entity as EntityTrait>::Model>
     where <Self::Entity as EntityTrait>::Model: Send {
-        crate::query::Insert::<Self::Entity>::new(self).exec_with_returning(conn).await
+        let row_id = crate::query::Insert::<Self::Entity>::new(self).exec_with_last_insert_id(conn).await?;
+        let row = crate::query::Select::<Self::Entity>::new()
+            .filter(crate::query::Condition::eq(Self::Entity::primary_key(), row_id))
+            .one(conn)
+            .await?;
+
+        row.ok_or(crate::error::Error::NoRowsAffected)
     }
 
     /// Insert this active model and return only the number of rows affected
     ///
     /// Use this when you don't need the inserted row back (slightly more efficient).
-    async fn insert_exec(self, conn: &turso::Connection) -> Result<u64> {
+    async fn insert_exec(self, conn: &crate::Connection) -> Result<u64> {
         crate::query::Insert::<Self::Entity>::new(self).exec(conn).await
     }
 
@@ -317,7 +323,7 @@ pub trait ActiveModelTrait: Default + Clone + Send + Sync + Sized + 'static {
     /// # Errors
     ///
     /// Returns `Error::PrimaryKeyNotSet` if the primary key is not set.
-    async fn update(self, conn: &turso::Connection) -> Result<<Self::Entity as EntityTrait>::Model>
+    async fn update(self, conn: &crate::Connection) -> Result<<Self::Entity as EntityTrait>::Model>
     where <Self::Entity as EntityTrait>::Model: Send {
         crate::query::Update::<Self::Entity>::new(self).exec_with_returning(conn).await
     }
@@ -325,7 +331,7 @@ pub trait ActiveModelTrait: Default + Clone + Send + Sync + Sized + 'static {
     /// Update this active model and return only the number of rows affected
     ///
     /// Use this when you don't need the updated row back.
-    async fn update_exec(self, conn: &turso::Connection) -> Result<u64> {
+    async fn update_exec(self, conn: &crate::Connection) -> Result<u64> {
         crate::query::Update::<Self::Entity>::new(self).exec(conn).await
     }
 
@@ -343,7 +349,7 @@ pub trait ActiveModelTrait: Default + Clone + Send + Sync + Sized + 'static {
     /// # Errors
     ///
     /// Returns `Error::PrimaryKeyNotSet` if the primary key is not set.
-    async fn delete(self, conn: &turso::Connection) -> Result<u64> {
+    async fn delete(self, conn: &crate::Connection) -> Result<u64> {
         let pk_value = self.get_primary_key_value().ok_or(crate::error::Error::PrimaryKeyNotSet)?;
         crate::query::Delete::<Self::Entity>::new()
             .filter(crate::query::Condition::eq(Self::Entity::primary_key(), pk_value))

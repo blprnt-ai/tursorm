@@ -7,12 +7,11 @@
 //! ```
 
 // Re-export the derive macro
+pub use turso::EncryptionOpts;
 pub use tursorm_macros::Entity;
 
 pub use crate::connection::Builder;
 pub use crate::connection::Connection;
-pub use crate::connection::ConnectionExt;
-pub use crate::connection::Database;
 pub use crate::entity::ActiveModelTrait;
 pub use crate::entity::ActiveValue;
 pub use crate::entity::ColumnTrait;

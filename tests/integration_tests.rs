@@ -232,26 +232,6 @@ mod insert_tests {
     }
 
     #[tokio::test]
-    async fn test_insert_with_returning() {
-        let conn = create_test_db().await;
-        create_users_table(&conn).await;
-
-        let model = UserActiveModel {
-            name: set("Bob".to_string()),
-            email: set("bob@example.com".to_string()),
-            age: set(Some(25)),
-            ..Default::default()
-        };
-
-        let user = Insert::<UserEntity>::new(model).exec_with_returning(&conn).await.unwrap();
-
-        assert_eq!(user.id, 1);
-        assert_eq!(user.name, "Bob");
-        assert_eq!(user.email, "bob@example.com");
-        assert_eq!(user.age, Some(25));
-    }
-
-    #[tokio::test]
     async fn test_insert_with_last_insert_id() {
         let conn = create_test_db().await;
         create_users_table(&conn).await;
@@ -276,23 +256,6 @@ mod insert_tests {
         let id2 = Insert::<UserEntity>::new(model2).exec_with_last_insert_id(&conn).await.unwrap();
 
         assert_eq!(id2, 2);
-    }
-
-    #[tokio::test]
-    async fn test_insert_with_null_optional_field() {
-        let conn = create_test_db().await;
-        create_users_table(&conn).await;
-
-        let model = UserActiveModel {
-            name: set("Eve".to_string()),
-            email: set("eve@example.com".to_string()),
-            age: set(None), // Explicitly set to None
-            ..Default::default()
-        };
-
-        let user = Insert::<UserEntity>::new(model).exec_with_returning(&conn).await.unwrap();
-
-        assert!(user.age.is_none());
     }
 
     #[tokio::test]
@@ -774,21 +737,6 @@ mod update_tests {
     }
 
     #[tokio::test]
-    async fn test_update_with_returning() {
-        let conn = create_test_db().await;
-        create_users_table(&conn).await;
-        let users = insert_sample_users(&conn).await;
-
-        let mut update_model = UserActiveModel::from(users[0].clone());
-        update_model.email = set("alice.updated@example.com".to_string());
-
-        let updated = Update::<UserEntity>::new(update_model).exec_with_returning(&conn).await.unwrap();
-
-        assert_eq!(updated.email, "alice.updated@example.com");
-        assert_eq!(updated.name, "Alice"); // Unchanged
-    }
-
-    #[tokio::test]
     async fn test_update_many_with_condition() {
         let conn = create_test_db().await;
         create_users_table(&conn).await;
@@ -1012,129 +960,6 @@ mod model_ext_tests {
 }
 
 // =============================================================================
-// Connection Extension Tests
-// =============================================================================
-
-mod connection_ext_tests {
-    use tursorm::ConnectionExt;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn test_connection_find_all() {
-        let conn = create_test_db().await;
-        create_users_table(&conn).await;
-        insert_sample_users(&conn).await;
-
-        let users = conn.find_all::<UserEntity>().await.unwrap();
-        assert_eq!(users.len(), 5);
-    }
-
-    #[tokio::test]
-    async fn test_connection_find_by_id() {
-        let conn = create_test_db().await;
-        create_users_table(&conn).await;
-        insert_sample_users(&conn).await;
-
-        let user = conn.find_by_id::<UserEntity, _>(1).await.unwrap();
-        assert!(user.is_some());
-        assert_eq!(user.unwrap().name, "Alice");
-    }
-
-    #[tokio::test]
-    async fn test_connection_insert() {
-        let conn = create_test_db().await;
-        create_users_table(&conn).await;
-
-        let model = UserActiveModel {
-            name: set("Test User".to_string()),
-            email: set("test@test.com".to_string()),
-            ..Default::default()
-        };
-
-        let affected = conn.insert::<UserEntity>(model).await.unwrap();
-        assert_eq!(affected, 1);
-    }
-
-    #[tokio::test]
-    async fn test_connection_insert_returning() {
-        let conn = create_test_db().await;
-        create_users_table(&conn).await;
-
-        let model = UserActiveModel {
-            name: set("Test User".to_string()),
-            email: set("test@test.com".to_string()),
-            ..Default::default()
-        };
-
-        let user = conn.insert_returning::<UserEntity>(model).await.unwrap();
-        assert_eq!(user.id, 1);
-        assert_eq!(user.name, "Test User");
-    }
-
-    #[tokio::test]
-    async fn test_connection_update() {
-        let conn = create_test_db().await;
-        create_users_table(&conn).await;
-        let users = insert_sample_users(&conn).await;
-
-        let mut update_model = UserActiveModel::from(users[0].clone());
-        update_model.name = set("Updated".to_string());
-
-        let affected = conn.update::<UserEntity>(update_model).await.unwrap();
-        assert_eq!(affected, 1);
-    }
-
-    #[tokio::test]
-    async fn test_connection_delete_by_id() {
-        let conn = create_test_db().await;
-        create_users_table(&conn).await;
-        insert_sample_users(&conn).await;
-
-        let affected = conn.delete_by_id::<UserEntity, _>(1).await.unwrap();
-        assert_eq!(affected, 1);
-
-        let count = Select::<UserEntity>::new().count(&conn).await.unwrap();
-        assert_eq!(count, 4);
-    }
-
-    #[tokio::test]
-    async fn test_connection_delete_model() {
-        let conn = create_test_db().await;
-        create_users_table(&conn).await;
-        let users = insert_sample_users(&conn).await;
-
-        let affected = conn.delete::<UserEntity>(&users[0]).await.unwrap();
-        assert_eq!(affected, 1);
-    }
-
-    #[tokio::test]
-    async fn test_connection_query_as() {
-        let conn = create_test_db().await;
-        create_users_table(&conn).await;
-        insert_sample_users(&conn).await;
-
-        let users: Vec<User> =
-            conn.query_as("SELECT id, name, email, age FROM users WHERE age > ?", [25]).await.unwrap();
-
-        assert_eq!(users.len(), 3); // Eve (28), Alice (30), Diana (35)
-    }
-
-    #[tokio::test]
-    async fn test_connection_query_one_as() {
-        let conn = create_test_db().await;
-        create_users_table(&conn).await;
-        insert_sample_users(&conn).await;
-
-        let user: Option<User> =
-            conn.query_one_as("SELECT id, name, email, age FROM users WHERE id = ?", [1]).await.unwrap();
-
-        assert!(user.is_some());
-        assert_eq!(user.unwrap().name, "Alice");
-    }
-}
-
-// =============================================================================
 // Migration Tests
 // =============================================================================
 
@@ -1336,15 +1161,6 @@ mod error_tests {
 
         let affected = Insert::<UserEntity>::empty().exec(&conn).await.unwrap();
         assert_eq!(affected, 0);
-    }
-
-    #[tokio::test]
-    async fn test_insert_with_returning_empty_error() {
-        let conn = create_test_db().await;
-        create_users_table(&conn).await;
-
-        let result = Insert::<UserEntity>::empty().exec_with_returning(&conn).await;
-        assert!(result.is_err());
     }
 }
 

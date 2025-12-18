@@ -158,14 +158,11 @@ pub mod error;
 pub mod migration;
 pub mod prelude;
 pub mod query;
+pub mod schema;
 pub mod value;
-
 // Re-export main types at crate root
 pub use connection::Builder;
 pub use connection::Connection;
-pub use connection::ConnectionExt;
-pub use connection::Database;
-pub use connection::Schema;
 pub use entity::ActiveModelTrait;
 pub use entity::ActiveValue;
 pub use entity::ColumnTrait;
@@ -184,8 +181,9 @@ pub use query::Order;
 pub use query::OrderBy;
 pub use query::Select;
 pub use query::Update;
-// Re-export turso types for convenience
+pub use schema::Schema;
 pub use turso::Row;
+pub use turso::Rows;
 // Re-export the derive macro
 pub use tursorm_macros::Entity;
 pub use value::ColumnType;

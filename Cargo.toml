@@ -17,6 +17,7 @@ serde = { version = "1.0.228", features = ["derive"], optional = true }
 serde_json = { version = "1.0.145", optional = true }
 thiserror = "2.0.17"
 turso = "0.3.2"
+turso_core = "0.3.2"
 uuid = { version = "1.19.0", features = ["v4", "serde"], optional = true }
 
 [features]

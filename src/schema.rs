@@ -1,187 +1,8 @@
 //! Database connection wrapper for tursorm
 
-pub use turso::Builder;
-pub use turso::Connection;
-pub use turso::Database;
-
 use crate::ColumnTrait;
 use crate::entity::EntityTrait;
-use crate::entity::FromRow;
-use crate::entity::ModelTrait;
 use crate::error::Result;
-use crate::query::Delete;
-use crate::query::Insert;
-use crate::query::Select;
-use crate::query::Update;
-
-/// Extension trait for turso::Connection that adds ORM functionality
-///
-/// This trait provides convenient methods for common database operations.
-///
-/// # Recommended API
-///
-/// For the best developer experience, use the methods on `ActiveModelTrait` and `ModelTrait`:
-///
-/// ```ignore
-/// // Create and insert
-/// let mut new_user = UserEntity::active_model();
-/// new_user.name = set("Alice".to_string());
-/// let user = new_user.insert(&conn).await?;
-///
-/// // Query
-/// let users = User::find().all(&conn).await?;
-/// let user = User::find_by_id(1).one(&conn).await?;
-///
-/// // Update
-/// let mut active = user.into_active_model();
-/// active.name = set("Alice Updated".to_string());
-/// let user = active.update(&conn).await?;
-///
-/// // Delete
-/// user.into_active_model().delete(&conn).await?;
-/// ```
-///
-/// The methods on this trait are provided for convenience and backward compatibility.
-#[async_trait::async_trait]
-pub trait ConnectionExt {
-    /// Execute a raw SQL query and return all results as the specified model type
-    async fn query_as<M: FromRow + Send>(&self, sql: &str, params: impl turso::IntoParams + Send) -> Result<Vec<M>>;
-
-    /// Execute a raw SQL query and return the first result
-    async fn query_one_as<M: FromRow + Send>(
-        &self,
-        sql: &str,
-        params: impl turso::IntoParams + Send,
-    ) -> Result<Option<M>>;
-
-    /// Find all records of an entity
-    ///
-    /// # Prefer using Model methods
-    ///
-    /// ```ignore
-    /// // Recommended:
-    /// let users = User::find().all(&conn).await?;
-    /// ```
-    async fn find_all<E: EntityTrait + Send>(&self) -> Result<Vec<E::Model>>
-    where E::Model: Send;
-
-    /// Find a record by primary key
-    ///
-    /// # Prefer using Model methods
-    ///
-    /// ```ignore
-    /// // Recommended:
-    /// let user = User::find_by_id(1).one(&conn).await?;
-    /// ```
-    async fn find_by_id<E: EntityTrait + Send, V: crate::value::IntoValue + Send>(
-        &self,
-        id: V,
-    ) -> Result<Option<E::Model>>
-    where
-        E::Model: Send;
-
-    /// Insert a new record
-    async fn insert<E: EntityTrait + Send>(&self, model: E::ActiveModel) -> Result<u64>
-    where E::ActiveModel: Send;
-
-    /// Insert a new record and return it
-    async fn insert_returning<E: EntityTrait + Send>(&self, model: E::ActiveModel) -> Result<E::Model>
-    where
-        E::ActiveModel: Send,
-        E::Model: Send;
-
-    /// Update a record
-    async fn update<E: EntityTrait + Send>(&self, model: E::ActiveModel) -> Result<u64>
-    where E::ActiveModel: Send;
-
-    /// Update a record and return it
-    async fn update_returning<E: EntityTrait + Send>(&self, model: E::ActiveModel) -> Result<E::Model>
-    where
-        E::ActiveModel: Send,
-        E::Model: Send;
-
-    /// Delete a record by primary key
-    async fn delete_by_id<E: EntityTrait + Send, V: crate::value::IntoValue + Send>(&self, id: V) -> Result<u64>;
-
-    /// Delete a model
-    async fn delete<E: EntityTrait + Send>(&self, model: &E::Model) -> Result<u64>
-    where E::Model: ModelTrait + Sync;
-}
-
-#[async_trait::async_trait]
-impl ConnectionExt for Connection {
-    async fn query_as<M: FromRow + Send>(&self, sql: &str, params: impl turso::IntoParams + Send) -> Result<Vec<M>> {
-        let mut rows = self.query(sql, params).await?;
-        let mut results = Vec::new();
-
-        while let Some(row) = rows.next().await? {
-            results.push(M::from_row(&row)?);
-        }
-
-        Ok(results)
-    }
-
-    async fn query_one_as<M: FromRow + Send>(
-        &self,
-        sql: &str,
-        params: impl turso::IntoParams + Send,
-    ) -> Result<Option<M>> {
-        let mut rows = self.query(sql, params).await?;
-
-        if let Some(row) = rows.next().await? { Ok(Some(M::from_row(&row)?)) } else { Ok(None) }
-    }
-
-    async fn find_all<E: EntityTrait + Send>(&self) -> Result<Vec<E::Model>>
-    where E::Model: Send {
-        Select::<E>::new().all(self).await
-    }
-
-    async fn find_by_id<E: EntityTrait + Send, V: crate::value::IntoValue + Send>(
-        &self,
-        id: V,
-    ) -> Result<Option<E::Model>>
-    where
-        E::Model: Send,
-    {
-        Select::<E>::new().filter(crate::query::Condition::eq(E::primary_key(), id)).one(self).await
-    }
-
-    async fn insert<E: EntityTrait>(&self, model: E::ActiveModel) -> Result<u64>
-    where E::ActiveModel: Send {
-        Insert::<E>::new(model).exec(self).await
-    }
-
-    async fn insert_returning<E: EntityTrait + Send>(&self, model: E::ActiveModel) -> Result<E::Model>
-    where
-        E::ActiveModel: Send,
-        E::Model: Send,
-    {
-        Insert::<E>::new(model).exec_with_returning(self).await
-    }
-
-    async fn update<E: EntityTrait + Send>(&self, model: E::ActiveModel) -> Result<u64>
-    where E::ActiveModel: Send {
-        Update::<E>::new(model).exec(self).await
-    }
-
-    async fn update_returning<E: EntityTrait + Send>(&self, model: E::ActiveModel) -> Result<E::Model>
-    where
-        E::ActiveModel: Send,
-        E::Model: Send,
-    {
-        Update::<E>::new(model).exec_with_returning(self).await
-    }
-
-    async fn delete_by_id<E: EntityTrait + Send, V: crate::value::IntoValue + Send>(&self, id: V) -> Result<u64> {
-        Delete::<E>::new().filter(crate::query::Condition::eq(E::primary_key(), id)).exec(self).await
-    }
-
-    async fn delete<E: EntityTrait + Send>(&self, model: &E::Model) -> Result<u64>
-    where E::Model: ModelTrait + Sync {
-        let pk_value = model.get_primary_key_value();
-        Delete::<E>::new().filter(crate::query::Condition::eq(E::primary_key(), pk_value)).exec(self).await
-    }
-}
 
 /// Schema helper for creating and dropping tables
 ///
@@ -210,7 +31,7 @@ impl Schema {
     /// ```ignore
     /// Schema::create_table::<UserEntity>(&conn, true).await?;
     /// ```
-    pub async fn create_table<E: EntityTrait>(conn: &Connection, if_not_exists: bool) -> Result<()>
+    pub async fn create_table<E: EntityTrait>(conn: &crate::Connection, if_not_exists: bool) -> Result<()>
     where E::Column: 'static {
         let sql = Self::create_table_sql::<E>(if_not_exists);
         conn.execute(&sql, ()).await?;
@@ -278,7 +99,7 @@ impl Schema {
     }
 
     /// Drop a table
-    pub async fn drop_table<E: EntityTrait>(conn: &Connection, if_exists: bool) -> Result<()> {
+    pub async fn drop_table<E: EntityTrait>(conn: &crate::Connection, if_exists: bool) -> Result<()> {
         let sql = Self::drop_table_sql::<E>(if_exists);
         conn.execute(&sql, ()).await?;
         Ok(())
@@ -291,7 +112,7 @@ impl Schema {
     }
 
     /// Check if a table exists
-    pub async fn table_exists<E: EntityTrait>(conn: &Connection) -> Result<bool> {
+    pub async fn table_exists<E: EntityTrait>(conn: &crate::Connection) -> Result<bool> {
         let sql = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?";
 
         let mut rows = conn.query(sql, [E::table_name()]).await?;
