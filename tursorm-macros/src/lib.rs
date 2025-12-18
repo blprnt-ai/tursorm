@@ -634,35 +634,6 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
             }
         }
 
-        impl #name {
-            /// Start a find query for this entity
-            ///
-            /// # Example
-            ///
-            /// ```ignore
-            /// let users = User::find()
-            ///     .filter(Condition::eq(UserColumn::Status, "active"))
-            ///     .all(&conn)
-            ///     .await?;
-            /// ```
-            pub fn find() -> tursorm::Select<#entity_name> {
-                tursorm::Select::new()
-            }
-
-            /// Find by primary key
-            ///
-            /// # Example
-            ///
-            /// ```ignore
-            /// let user = User::find_by_id(1).one(&conn).await?;
-            /// ```
-            pub fn find_by_id<V: tursorm::IntoValue>(id: V) -> tursorm::Select<#entity_name> {
-                tursorm::Select::new().filter(
-                    tursorm::Condition::eq(#column_enum_name::#pk_variant, id)
-                )
-            }
-        }
-
         impl #entity_name {
             /// Create a new default ActiveModel for this entity
             ///

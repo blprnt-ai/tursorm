@@ -919,6 +919,8 @@ mod delete_tests {
 
 mod model_ext_tests {
 
+    use tursorm::SelectExt;
+
     use super::*;
 
     #[tokio::test]

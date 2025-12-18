@@ -20,6 +20,5 @@ pub mod prelude {
     pub use super::insert::Insert;
     pub use super::insert::InsertMany;
     pub use super::select::Select;
-    pub use super::select::SelectExt;
     pub use super::update::Update;
 }

@@ -163,3 +163,5 @@ pub mod migration;
 
 pub mod prelude;
 pub use prelude::*;
+pub use query::delete::DeleteExt;
+pub use query::select::SelectExt;
