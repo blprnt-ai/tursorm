@@ -37,7 +37,7 @@ pub enum Error {
     Query(String),
 
     /// JSON serialization/deserialization error
-    #[cfg(feature = "with-json")]
+    #[cfg(any(feature = "with-json", feature = "with-arrays"))]
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 }

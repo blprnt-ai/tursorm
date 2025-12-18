@@ -460,6 +460,147 @@ mod json_impl {
     }
 }
 
+// Optional array support (Vec<T> stored as JSON arrays)
+#[cfg(feature = "with-arrays")]
+mod arrays_impl {
+    use super::*;
+
+    // Vec<T> implementations for common types (stored as JSON arrays)
+    // Note: Vec<u8> is not included here as it's implemented as Blob elsewhere
+
+    impl IntoValue for Vec<String> {
+        fn into_value(self) -> Value {
+            match serde_json::to_string(&self) {
+                Ok(s) => Value::Text(s),
+                Err(_) => Value::Null,
+            }
+        }
+    }
+
+    impl FromValue for Vec<String> {
+        fn from_value(value: Value) -> Result<Self> {
+            match value {
+                Value::Text(s) => {
+                    let parsed: Vec<String> = serde_json::from_str(&s)?;
+                    Ok(parsed)
+                }
+                Value::Null => Err(Error::UnexpectedNull),
+                other => Err(Error::TypeConversion { expected: "Text (JSON array)", actual: format!("{:?}", other) }),
+            }
+        }
+    }
+
+    impl IntoValue for Vec<i64> {
+        fn into_value(self) -> Value {
+            match serde_json::to_string(&self) {
+                Ok(s) => Value::Text(s),
+                Err(_) => Value::Null,
+            }
+        }
+    }
+
+    impl FromValue for Vec<i64> {
+        fn from_value(value: Value) -> Result<Self> {
+            match value {
+                Value::Text(s) => {
+                    let parsed: Vec<i64> = serde_json::from_str(&s)?;
+                    Ok(parsed)
+                }
+                Value::Null => Err(Error::UnexpectedNull),
+                other => Err(Error::TypeConversion { expected: "Text (JSON array)", actual: format!("{:?}", other) }),
+            }
+        }
+    }
+
+    impl IntoValue for Vec<i32> {
+        fn into_value(self) -> Value {
+            match serde_json::to_string(&self) {
+                Ok(s) => Value::Text(s),
+                Err(_) => Value::Null,
+            }
+        }
+    }
+
+    impl FromValue for Vec<i32> {
+        fn from_value(value: Value) -> Result<Self> {
+            match value {
+                Value::Text(s) => {
+                    let parsed: Vec<i32> = serde_json::from_str(&s)?;
+                    Ok(parsed)
+                }
+                Value::Null => Err(Error::UnexpectedNull),
+                other => Err(Error::TypeConversion { expected: "Text (JSON array)", actual: format!("{:?}", other) }),
+            }
+        }
+    }
+
+    impl IntoValue for Vec<f64> {
+        fn into_value(self) -> Value {
+            match serde_json::to_string(&self) {
+                Ok(s) => Value::Text(s),
+                Err(_) => Value::Null,
+            }
+        }
+    }
+
+    impl FromValue for Vec<f64> {
+        fn from_value(value: Value) -> Result<Self> {
+            match value {
+                Value::Text(s) => {
+                    let parsed: Vec<f64> = serde_json::from_str(&s)?;
+                    Ok(parsed)
+                }
+                Value::Null => Err(Error::UnexpectedNull),
+                other => Err(Error::TypeConversion { expected: "Text (JSON array)", actual: format!("{:?}", other) }),
+            }
+        }
+    }
+
+    impl IntoValue for Vec<f32> {
+        fn into_value(self) -> Value {
+            match serde_json::to_string(&self) {
+                Ok(s) => Value::Text(s),
+                Err(_) => Value::Null,
+            }
+        }
+    }
+
+    impl FromValue for Vec<f32> {
+        fn from_value(value: Value) -> Result<Self> {
+            match value {
+                Value::Text(s) => {
+                    let parsed: Vec<f32> = serde_json::from_str(&s)?;
+                    Ok(parsed)
+                }
+                Value::Null => Err(Error::UnexpectedNull),
+                other => Err(Error::TypeConversion { expected: "Text (JSON array)", actual: format!("{:?}", other) }),
+            }
+        }
+    }
+
+    impl IntoValue for Vec<bool> {
+        fn into_value(self) -> Value {
+            match serde_json::to_string(&self) {
+                Ok(s) => Value::Text(s),
+                Err(_) => Value::Null,
+            }
+        }
+    }
+
+    impl FromValue for Vec<bool> {
+        fn from_value(value: Value) -> Result<Self> {
+            match value {
+                Value::Text(s) => {
+                    let parsed: Vec<bool> = serde_json::from_str(&s)?;
+                    Ok(parsed)
+                }
+                Value::Null => Err(Error::UnexpectedNull),
+                other => Err(Error::TypeConversion { expected: "Text (JSON array)", actual: format!("{:?}", other) }),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -807,5 +948,221 @@ mod tests {
         // Test negative infinity
         let val = f64::NEG_INFINITY;
         assert_eq!(val.into_value(), Value::Real(f64::NEG_INFINITY));
+    }
+
+    // Vec<T> tests (require with-arrays feature)
+    #[cfg(feature = "with-arrays")]
+    mod vec_tests {
+        use super::*;
+
+        // Vec<String> tests
+        #[test]
+        fn test_vec_string_into_value() {
+            let val = vec!["hello".to_string(), "world".to_string()];
+            let result = val.into_value();
+            assert_eq!(result, Value::Text("[\"hello\",\"world\"]".to_string()));
+        }
+
+        #[test]
+        fn test_vec_string_into_value_empty() {
+            let val: Vec<String> = vec![];
+            let result = val.into_value();
+            assert_eq!(result, Value::Text("[]".to_string()));
+        }
+
+        #[test]
+        fn test_vec_string_from_value() {
+            let val = Value::Text("[\"hello\",\"world\"]".to_string());
+            let result: Vec<String> = Vec::<String>::from_value(val).unwrap();
+            assert_eq!(result, vec!["hello".to_string(), "world".to_string()]);
+        }
+
+        #[test]
+        fn test_vec_string_from_value_empty() {
+            let val = Value::Text("[]".to_string());
+            let result: Vec<String> = Vec::<String>::from_value(val).unwrap();
+            assert!(result.is_empty());
+        }
+
+        #[test]
+        fn test_vec_string_from_null() {
+            let val = Value::Null;
+            assert!(Vec::<String>::from_value(val).is_err());
+        }
+
+        #[test]
+        fn test_vec_string_from_invalid_type() {
+            let val = Value::Integer(42);
+            assert!(Vec::<String>::from_value(val).is_err());
+        }
+
+        // Vec<i64> tests
+        #[test]
+        fn test_vec_i64_into_value() {
+            let val = vec![1i64, 2, 3, 4, 5];
+            let result = val.into_value();
+            assert_eq!(result, Value::Text("[1,2,3,4,5]".to_string()));
+        }
+
+        #[test]
+        fn test_vec_i64_from_value() {
+            let val = Value::Text("[1,2,3,4,5]".to_string());
+            let result: Vec<i64> = Vec::<i64>::from_value(val).unwrap();
+            assert_eq!(result, vec![1i64, 2, 3, 4, 5]);
+        }
+
+        #[test]
+        fn test_vec_i64_from_null() {
+            let val = Value::Null;
+            assert!(Vec::<i64>::from_value(val).is_err());
+        }
+
+        #[test]
+        fn test_vec_i64_negative_values() {
+            let val = vec![-1i64, -2, -3];
+            let result = val.into_value();
+            assert_eq!(result, Value::Text("[-1,-2,-3]".to_string()));
+
+            let parsed: Vec<i64> = Vec::<i64>::from_value(result).unwrap();
+            assert_eq!(parsed, vec![-1i64, -2, -3]);
+        }
+
+        // Vec<i32> tests
+        #[test]
+        fn test_vec_i32_into_value() {
+            let val = vec![1i32, 2, 3];
+            let result = val.into_value();
+            assert_eq!(result, Value::Text("[1,2,3]".to_string()));
+        }
+
+        #[test]
+        fn test_vec_i32_from_value() {
+            let val = Value::Text("[1,2,3]".to_string());
+            let result: Vec<i32> = Vec::<i32>::from_value(val).unwrap();
+            assert_eq!(result, vec![1i32, 2, 3]);
+        }
+
+        #[test]
+        fn test_vec_i32_from_null() {
+            let val = Value::Null;
+            assert!(Vec::<i32>::from_value(val).is_err());
+        }
+
+        // Vec<f64> tests
+        #[test]
+        fn test_vec_f64_into_value() {
+            let val = vec![1.5f64, 2.5, 3.5];
+            let result = val.into_value();
+            assert_eq!(result, Value::Text("[1.5,2.5,3.5]".to_string()));
+        }
+
+        #[test]
+        fn test_vec_f64_from_value() {
+            let val = Value::Text("[1.5,2.5,3.5]".to_string());
+            let result: Vec<f64> = Vec::<f64>::from_value(val).unwrap();
+            assert_eq!(result, vec![1.5f64, 2.5, 3.5]);
+        }
+
+        #[test]
+        fn test_vec_f64_from_null() {
+            let val = Value::Null;
+            assert!(Vec::<f64>::from_value(val).is_err());
+        }
+
+        // Vec<f32> tests
+        #[test]
+        fn test_vec_f32_into_value() {
+            let val = vec![1.5f32, 2.5, 3.5];
+            let result = val.into_value();
+            assert_eq!(result, Value::Text("[1.5,2.5,3.5]".to_string()));
+        }
+
+        #[test]
+        fn test_vec_f32_from_value() {
+            let val = Value::Text("[1.5,2.5,3.5]".to_string());
+            let result: Vec<f32> = Vec::<f32>::from_value(val).unwrap();
+            assert_eq!(result, vec![1.5f32, 2.5, 3.5]);
+        }
+
+        #[test]
+        fn test_vec_f32_from_null() {
+            let val = Value::Null;
+            assert!(Vec::<f32>::from_value(val).is_err());
+        }
+
+        // Vec<bool> tests
+        #[test]
+        fn test_vec_bool_into_value() {
+            let val = vec![true, false, true];
+            let result = val.into_value();
+            assert_eq!(result, Value::Text("[true,false,true]".to_string()));
+        }
+
+        #[test]
+        fn test_vec_bool_from_value() {
+            let val = Value::Text("[true,false,true]".to_string());
+            let result: Vec<bool> = Vec::<bool>::from_value(val).unwrap();
+            assert_eq!(result, vec![true, false, true]);
+        }
+
+        #[test]
+        fn test_vec_bool_from_null() {
+            let val = Value::Null;
+            assert!(Vec::<bool>::from_value(val).is_err());
+        }
+
+        #[test]
+        fn test_vec_bool_empty() {
+            let val: Vec<bool> = vec![];
+            let result = val.into_value();
+            assert_eq!(result, Value::Text("[]".to_string()));
+
+            let parsed: Vec<bool> = Vec::<bool>::from_value(result).unwrap();
+            assert!(parsed.is_empty());
+        }
+
+        // Roundtrip tests
+        #[test]
+        fn test_vec_string_roundtrip() {
+            let original = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+            let value = original.clone().into_value();
+            let parsed: Vec<String> = Vec::<String>::from_value(value).unwrap();
+            assert_eq!(original, parsed);
+        }
+
+        #[test]
+        fn test_vec_i64_roundtrip() {
+            let original = vec![i64::MIN, 0, i64::MAX];
+            let value = original.clone().into_value();
+            let parsed: Vec<i64> = Vec::<i64>::from_value(value).unwrap();
+            assert_eq!(original, parsed);
+        }
+
+        #[test]
+        fn test_vec_f64_roundtrip() {
+            let original = vec![0.0, 1.0, -1.0, 123.456];
+            let value = original.clone().into_value();
+            let parsed: Vec<f64> = Vec::<f64>::from_value(value).unwrap();
+            assert_eq!(original, parsed);
+        }
+
+        // Invalid JSON tests
+        #[test]
+        fn test_vec_string_from_invalid_json() {
+            let val = Value::Text("not valid json".to_string());
+            assert!(Vec::<String>::from_value(val).is_err());
+        }
+
+        #[test]
+        fn test_vec_i64_from_invalid_json() {
+            let val = Value::Text("[\"not\", \"numbers\"]".to_string());
+            assert!(Vec::<i64>::from_value(val).is_err());
+        }
+
+        #[test]
+        fn test_vec_bool_from_invalid_json() {
+            let val = Value::Text("[1, 0]".to_string()); // numbers, not bools
+            assert!(Vec::<bool>::from_value(val).is_err());
+        }
     }
 }

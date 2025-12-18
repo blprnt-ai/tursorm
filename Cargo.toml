@@ -1,6 +1,6 @@
 [package]
 name = "tursorm"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 description = "A simple ORM for Turso inspired by SeaORM"
 license = "MIT"
@@ -20,7 +20,8 @@ turso = "0.3.2"
 uuid = { version = "1.19.0", features = ["v4", "serde"], optional = true }
 
 [features]
-default = []
+default = ["with-arrays"]
+with-arrays = ["serde", "serde_json"]
 with-json = ["serde", "serde_json"]
 with-chrono = ["chrono"]
 with-uuid = ["uuid"]

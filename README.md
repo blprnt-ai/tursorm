@@ -9,7 +9,11 @@ A simple ORM for [Turso](https://turso.tech) inspired by SeaORM.
 tursorm = "0.0.1"
 ```
 
-Optional features: `with-chrono`, `with-uuid`, `with-json`
+**Features:**
+- `with-arrays` (default) - `Vec<T>` support for `String`, `i32`, `i64`, `f32`, `f64`, `bool`
+- `with-json` - JSON serialization with `Json<T>` wrapper
+- `with-chrono` - Date/time types
+- `with-uuid` - UUID support
 
 ## Quick Start
 
@@ -203,8 +207,11 @@ let conn = db.connect()?;
 | `f32`, `f64` | REAL |
 | `String`, `&str` | TEXT |
 | `Vec<u8>` | BLOB |
+| `Vec<T>`* | TEXT (JSON array) |
 | `bool` | INTEGER (0/1) |
 | `Option<T>` | NULL when None |
+
+*`Vec<T>` supported for `String`, `i32`, `i64`, `f32`, `f64`, `bool` (requires `with-arrays` feature, enabled by default)
 
 ## License
 
