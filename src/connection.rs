@@ -16,23 +16,32 @@ use crate::query::Update;
 
 /// Extension trait for turso::Connection that adds ORM functionality
 ///
-/// This trait provides convenient methods for common database operations
-/// like finding, inserting, updating, and deleting records.
+/// This trait provides convenient methods for common database operations.
 ///
-/// # Example
+/// # Recommended API
+///
+/// For the best developer experience, use the methods on `ActiveModelTrait` and `ModelTrait`:
 ///
 /// ```ignore
-/// use tursorm::ConnectionExt;
+/// // Create and insert
+/// let mut new_user = UserEntity::active_model();
+/// new_user.name = set("Alice".to_string());
+/// let user = new_user.insert(&conn).await?;
 ///
-/// // Find all users
-/// let users = conn.find_all::<UserEntity>().await?;
+/// // Query
+/// let users = User::find().all(&conn).await?;
+/// let user = User::find_by_id(1).one(&conn).await?;
 ///
-/// // Find by ID
-/// let user = conn.find_by_id::<UserEntity, _>(1).await?;
+/// // Update
+/// let mut active = user.into_active_model();
+/// active.name = set("Alice Updated".to_string());
+/// let user = active.update(&conn).await?;
 ///
-/// // Insert a new record
-/// let affected = conn.insert::<UserEntity>(user_model).await?;
+/// // Delete
+/// user.into_active_model().delete(&conn).await?;
 /// ```
+///
+/// The methods on this trait are provided for convenience and backward compatibility.
 #[async_trait::async_trait]
 pub trait ConnectionExt {
     /// Execute a raw SQL query and return all results as the specified model type
@@ -46,10 +55,24 @@ pub trait ConnectionExt {
     ) -> Result<Option<M>>;
 
     /// Find all records of an entity
+    ///
+    /// # Prefer using Model methods
+    ///
+    /// ```ignore
+    /// // Recommended:
+    /// let users = User::find().all(&conn).await?;
+    /// ```
     async fn find_all<E: EntityTrait + Send>(&self) -> Result<Vec<E::Model>>
     where E::Model: Send;
 
     /// Find a record by primary key
+    ///
+    /// # Prefer using Model methods
+    ///
+    /// ```ignore
+    /// // Recommended:
+    /// let user = User::find_by_id(1).one(&conn).await?;
+    /// ```
     async fn find_by_id<E: EntityTrait + Send, V: crate::value::IntoValue + Send>(
         &self,
         id: V,

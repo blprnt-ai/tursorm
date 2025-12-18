@@ -110,10 +110,26 @@ pub trait ColumnTrait: Copy + Clone + std::fmt::Debug + std::fmt::Display + 'sta
 ///     pub name: String,
 ///     pub email: String,
 /// }
+///
+/// // Query records
+/// let users = User::find().all(&conn).await?;
+///
+/// // Insert a new record
+/// let mut new_user = UserEntity::active_model();
+/// new_user.name = set("Alice".to_string());
+/// let user = new_user.insert(&conn).await?;
+///
+/// // Update a record
+/// let mut active = user.into_active_model();
+/// active.name = set("Alice Updated".to_string());
+/// let user = active.update(&conn).await?;
+///
+/// // Delete a record
+/// user.into_active_model().delete(&conn).await?;
 /// ```
-pub trait EntityTrait: Default + Send + Sync {
+pub trait EntityTrait: Default + Send + Sync + 'static {
     /// The model type for this entity
-    type Model: ModelTrait<Entity = Self> + FromRow;
+    type Model: ModelTrait<Entity = Self> + FromRow + Send;
 
     /// The column enum type for this entity
     type Column: ColumnTrait;
@@ -145,27 +161,51 @@ pub trait EntityTrait: Default + Send + Sync {
 /// # Example
 ///
 /// ```ignore
-/// #[derive(Clone, Debug)]
-/// pub struct User {
-///     pub id: i64,
-///     pub name: String,
-///     pub email: String,
-/// }
+/// // Query for records
+/// let users = User::find()
+///     .filter(Condition::eq(UserColumn::Status, "active"))
+///     .all(&conn)
+///     .await?;
 ///
-/// impl ModelTrait for User {
-///     type Entity = UserEntity;
-///     
-///     fn get_primary_key_value(&self) -> Value {
-///         Value::Integer(self.id)
-///     }
+/// // Find by ID
+/// let user = User::find_by_id(1).one(&conn).await?;
+///
+/// // Convert to active model for updates or deletes
+/// if let Some(user) = user {
+///     let mut active = user.into_active_model();
+///     active.name = set("Updated".to_string());
+///     active.update(&conn).await?;
 /// }
 /// ```
-pub trait ModelTrait: Clone {
+pub trait ModelTrait: Clone + Send + Sync {
     /// The entity type for this model
     type Entity: EntityTrait;
 
     /// Get the primary key value
     fn get_primary_key_value(&self) -> Value;
+
+    /// Convert this model into an active model for updates or deletes
+    ///
+    /// All fields will be set to `Set` with the model's current values.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let user = User::find_by_id(1).one(&conn).await?.unwrap();
+    ///
+    /// // Update
+    /// let mut active = user.into_active_model();
+    /// active.name = set("New Name".to_string());
+    /// let updated = active.update(&conn).await?;
+    ///
+    /// // Delete
+    /// let active = user.into_active_model();
+    /// active.delete(&conn).await?;
+    /// ```
+    fn into_active_model(self) -> <Self::Entity as EntityTrait>::ActiveModel
+    where <Self::Entity as EntityTrait>::ActiveModel: From<Self> {
+        <Self::Entity as EntityTrait>::ActiveModel::from(self)
+    }
 }
 
 /// Trait for converting from a database row to a model
@@ -198,23 +238,28 @@ pub trait FromRow: Sized {
 /// # Example
 ///
 /// ```ignore
-/// #[derive(Clone, Debug, Default)]
-/// pub struct UserActiveModel {
-///     pub id: ActiveValue<i64>,
-///     pub name: ActiveValue<String>,
-///     pub email: ActiveValue<String>,
-/// }
+/// use tursorm::prelude::*;
 ///
-/// // Only set fields are included in the INSERT
-/// let new_user = UserActiveModel {
-///     name: set("Alice".to_string()),
-///     email: set("alice@example.com".to_string()),
-///     ..Default::default()  // id is NotSet, will use auto-increment
-/// };
+/// // Create a new active model and insert it
+/// let mut new_user = UserEntity::active_model();
+/// new_user.name = set("Alice".to_string());
+/// new_user.email = set("alice@example.com".to_string());
+///
+/// // Insert and get the inserted row back
+/// let user = new_user.insert(&conn).await?;
+///
+/// // Update an existing record
+/// let mut active = user.into_active_model();
+/// active.name = set("Alice Updated".to_string());
+/// let updated_user = active.update(&conn).await?;
+///
+/// // Delete a record
+/// user.into_active_model().delete(&conn).await?;
 /// ```
-pub trait ActiveModelTrait: Default + Clone + Send + Sync {
+#[async_trait::async_trait]
+pub trait ActiveModelTrait: Default + Clone + Send + Sync + Sized + 'static {
     /// The entity type for this active model
-    type Entity: EntityTrait;
+    type Entity: EntityTrait<ActiveModel = Self>;
 
     /// Get columns and values for insert
     fn get_insert_columns_and_values(&self) -> (Vec<&'static str>, Vec<Value>);
@@ -227,6 +272,84 @@ pub trait ActiveModelTrait: Default + Clone + Send + Sync {
 
     /// Get the primary key column name
     fn primary_key_column() -> &'static str;
+
+    /// Insert this active model into the database and return the inserted row
+    ///
+    /// This is the primary way to insert new records. The returned model
+    /// includes any auto-generated values (like auto-increment IDs).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let mut new_user = UserEntity::active_model();
+    /// new_user.name = set("Alice".to_string());
+    /// new_user.email = set("alice@example.com".to_string());
+    ///
+    /// let user = new_user.insert(&conn).await?;
+    /// println!("Created user with ID: {}", user.id);
+    /// ```
+    async fn insert(self, conn: &turso::Connection) -> Result<<Self::Entity as EntityTrait>::Model>
+    where <Self::Entity as EntityTrait>::Model: Send {
+        crate::query::Insert::<Self::Entity>::new(self).exec_with_returning(conn).await
+    }
+
+    /// Insert this active model and return only the number of rows affected
+    ///
+    /// Use this when you don't need the inserted row back (slightly more efficient).
+    async fn insert_exec(self, conn: &turso::Connection) -> Result<u64> {
+        crate::query::Insert::<Self::Entity>::new(self).exec(conn).await
+    }
+
+    /// Update this active model in the database and return the updated row
+    ///
+    /// The active model must have its primary key set. Only fields that are
+    /// `Set` will be updated.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let mut update = UserEntity::into_active_model(user);
+    /// update.name = set("New Name".to_string());
+    ///
+    /// let updated = update.update(&conn).await?;
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::PrimaryKeyNotSet` if the primary key is not set.
+    async fn update(self, conn: &turso::Connection) -> Result<<Self::Entity as EntityTrait>::Model>
+    where <Self::Entity as EntityTrait>::Model: Send {
+        crate::query::Update::<Self::Entity>::new(self).exec_with_returning(conn).await
+    }
+
+    /// Update this active model and return only the number of rows affected
+    ///
+    /// Use this when you don't need the updated row back.
+    async fn update_exec(self, conn: &turso::Connection) -> Result<u64> {
+        crate::query::Update::<Self::Entity>::new(self).exec(conn).await
+    }
+
+    /// Delete this active model from the database
+    ///
+    /// The active model must have its primary key set.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let to_delete = UserEntity::into_active_model(user);
+    /// let rows_affected = to_delete.delete(&conn).await?;
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::PrimaryKeyNotSet` if the primary key is not set.
+    async fn delete(self, conn: &turso::Connection) -> Result<u64> {
+        let pk_value = self.get_primary_key_value().ok_or(crate::error::Error::PrimaryKeyNotSet)?;
+        crate::query::Delete::<Self::Entity>::new()
+            .filter(crate::query::Condition::eq(Self::Entity::primary_key(), pk_value))
+            .exec(conn)
+            .await
+    }
 }
 
 /// Active value wrapper for tracking field state in active models

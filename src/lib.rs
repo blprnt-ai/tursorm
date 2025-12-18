@@ -46,12 +46,10 @@
 //!     ).await?;
 //!
 //!     // Insert a new user
-//!     let new_user = UserActiveModel {
-//!         name: set("Alice".to_string()),
-//!         email: set("alice@example.com".to_string()),
-//!         ..Default::default()
-//!     };
-//!     let user = User::insert(new_user).exec_with_returning(&conn).await?;
+//!     let mut new_user = UserEntity::active_model();
+//!     new_user.name = set("Alice".to_string());
+//!     new_user.email = set("alice@example.com".to_string());
+//!     let user = new_user.insert(&conn).await?;
 //!
 //!     // Find users
 //!     let users = User::find()
@@ -60,12 +58,12 @@
 //!         .await?;
 //!
 //!     // Update a user
-//!     let mut update_model: UserActiveModel = user.clone().into();
-//!     update_model.name = set("Alice Smith".to_string());
-//!     User::update(update_model).exec(&conn).await?;
+//!     let mut active = user.clone().into_active_model();
+//!     active.name = set("Alice Smith".to_string());
+//!     let user = active.update(&conn).await?;
 //!
 //!     // Delete a user
-//!     User::delete_by_id(user.id).exec(&conn).await?;
+//!     user.into_active_model().delete(&conn).await?;
 //!
 //!     Ok(())
 //! }
@@ -110,32 +108,30 @@
 //! ### Insert
 //!
 //! ```ignore
-//! let new_user = UserActiveModel {
-//!     name: set("Bob".to_string()),
-//!     email: set("bob@example.com".to_string()),
-//!     ..Default::default()
-//! };
+//! let mut new_user = UserEntity::active_model();
+//! new_user.name = set("Bob".to_string());
+//! new_user.email = set("bob@example.com".to_string());
 //!
-//! // Insert and get row count
-//! let affected = User::insert(new_user).exec(&conn).await?;
+//! // Insert and get the inserted row (recommended)
+//! let user = new_user.insert(&conn).await?;
 //!
-//! // Insert and get the inserted row
-//! let user = User::insert(new_user).exec_with_returning(&conn).await?;
-//!
-//! // Insert and get last insert ID
-//! let id = User::insert(new_user).exec_with_last_insert_id(&conn).await?;
+//! // Insert and get row count only
+//! new_user.insert_exec(&conn).await?;
 //! ```
 //!
 //! ### Update
 //!
 //! ```ignore
-//! let mut update = UserActiveModel::from(user);
-//! update.name = set("Updated Name".to_string());
+//! let mut active = user.into_active_model();
+//! active.name = set("Updated Name".to_string());
 //!
-//! // Update by primary key
-//! User::update(update).exec(&conn).await?;
+//! // Update and get the updated row (recommended)
+//! let user = active.update(&conn).await?;
 //!
-//! // Bulk update
+//! // Update and get row count only
+//! active.update_exec(&conn).await?;
+//!
+//! // Bulk update (using query builder directly)
 //! Update::<UserEntity>::many()
 //!     .set(UserColumn::Name, "Anonymous")
 //!     .filter(Condition::is_null(UserColumn::Email))
@@ -146,10 +142,10 @@
 //! ### Delete
 //!
 //! ```ignore
-//! // Delete by ID
-//! User::delete_by_id(1).exec(&conn).await?;
+//! // Delete a model
+//! user.into_active_model().delete(&conn).await?;
 //!
-//! // Delete with condition
+//! // Delete with condition (using query builder directly)
 //! Delete::<UserEntity>::new()
 //!     .filter(Condition::lt(UserColumn::CreatedAt, "2020-01-01"))
 //!     .exec(&conn)
