@@ -1,0 +1,4 @@
+{
+  "rust-analyzer.rustfmt.overrideCommand": null,
+  "rust-analyzer.rustfmt.extraArgs": []
+}

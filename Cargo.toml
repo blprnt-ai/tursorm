@@ -1,0 +1,32 @@
+[package]
+name = "tursorm"
+version = "0.0.1"
+edition = "2024"
+description = "A simple ORM for Turso inspired by SeaORM"
+license = "MIT"
+repository = "https://github.com/blprnt-ai/tursoorm"
+keywords = ["turso", "orm", "database", "sqlite"]
+categories = ["database"]
+
+[dependencies]
+tursorm-macros = { path = "./tursorm-macros", version = "0.0.1" }
+
+async-trait = "0.1.89"
+chrono = { version = "0.4.42", features = ["serde"], optional = true }
+serde = { version = "1.0.228", features = ["derive"], optional = true }
+serde_json = { version = "1.0.145", optional = true }
+thiserror = "2.0.17"
+turso = "0.3.2"
+uuid = { version = "1.19.0", features = ["v4", "serde"], optional = true }
+
+[features]
+default = []
+with-json = ["serde", "serde_json"]
+with-chrono = ["chrono"]
+with-uuid = ["uuid"]
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[workspace]
+members = ["tursorm-macros"]
