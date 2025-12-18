@@ -645,7 +645,19 @@ fn rust_type_to_column_type(ty: &Type, is_optional: bool) -> TokenStream2 {
                 }
                 "f32" | "f64" => quote! { tursorm::ColumnType::Float },
                 "String" | "str" => quote! { tursorm::ColumnType::Text },
-                "Vec" => quote! { tursorm::ColumnType::Blob },
+                "Vec" => {
+                    // Vec<u8> is Blob, other Vec<T> are Text (JSON arrays)
+                    if let Some(inner) = extract_vec_inner_type(inner_type) {
+                        if let Type::Path(inner_path) = inner {
+                            if let Some(seg) = inner_path.path.segments.last() {
+                                if seg.ident == "u8" {
+                                    return quote! { tursorm::ColumnType::Blob };
+                                }
+                            }
+                        }
+                    }
+                    quote! { tursorm::ColumnType::Text }
+                }
                 "bool" => quote! { tursorm::ColumnType::Integer },
                 _ => quote! { tursorm::ColumnType::Text },
             }
@@ -660,6 +672,21 @@ fn extract_option_inner_type(ty: &Type) -> Option<&Type> {
     if let Type::Path(type_path) = ty {
         if let Some(segment) = type_path.path.segments.last() {
             if segment.ident == "Option" {
+                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                    if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
+                        return Some(inner);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn extract_vec_inner_type(ty: &Type) -> Option<&Type> {
+    if let Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            if segment.ident == "Vec" {
                 if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
                     if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
                         return Some(inner);
