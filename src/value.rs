@@ -123,6 +123,24 @@ impl IntoValue for u8 {
     }
 }
 
+impl IntoValue for u64 {
+    fn into_value(self) -> Value {
+        Value::Integer(self as i64)
+    }
+}
+
+impl IntoValue for isize {
+    fn into_value(self) -> Value {
+        Value::Integer(self as i64)
+    }
+}
+
+impl IntoValue for usize {
+    fn into_value(self) -> Value {
+        Value::Integer(self as i64)
+    }
+}
+
 impl IntoValue for f64 {
     fn into_value(self) -> Value {
         Value::Real(self)
@@ -226,6 +244,24 @@ impl FromValue for u16 {
 impl FromValue for u8 {
     fn from_value(value: Value) -> Result<Self> {
         i64::from_value(value).map(|v| v as u8)
+    }
+}
+
+impl FromValue for u64 {
+    fn from_value(value: Value) -> Result<Self> {
+        i64::from_value(value).map(|v| v as u64)
+    }
+}
+
+impl FromValue for isize {
+    fn from_value(value: Value) -> Result<Self> {
+        i64::from_value(value).map(|v| v as isize)
+    }
+}
+
+impl FromValue for usize {
+    fn from_value(value: Value) -> Result<Self> {
+        i64::from_value(value).map(|v| v as usize)
     }
 }
 

@@ -73,6 +73,15 @@ pub trait ColumnTrait: Copy + Clone + std::fmt::Debug + std::fmt::Display + 'sta
         false
     }
 
+    /// Get the old column name if this column was renamed (for migrations)
+    ///
+    /// When a column is renamed, this returns the previous name so that
+    /// migrations can perform a `RENAME COLUMN` instead of dropping and
+    /// recreating the column, preserving the data.
+    fn renamed_from(&self) -> Option<&'static str> {
+        None
+    }
+
     /// Get all columns as a static slice
     fn all() -> &'static [Self];
 }

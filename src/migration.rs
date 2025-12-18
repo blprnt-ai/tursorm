@@ -67,6 +67,8 @@ pub enum SchemaChange {
     AddColumn { table_name: String, column_name: String, sql: String },
     /// Drop a column (requires SQLite 3.35.0+)
     DropColumn { table_name: String, column_name: String, sql: String },
+    /// Rename a column (requires SQLite 3.25.0+)
+    RenameColumn { table_name: String, old_name: String, new_name: String, sql: String },
     /// Recreate table to change column properties (for SQLite limitations)
     RecreateTable { table_name: String, reason: String, sql: Vec<String> },
     /// Create an index
@@ -88,6 +90,9 @@ impl SchemaChange {
             SchemaChange::DropColumn { table_name, column_name, .. } => {
                 format!("Drop column '{}' from table '{}'", column_name, table_name)
             }
+            SchemaChange::RenameColumn { table_name, old_name, new_name, .. } => {
+                format!("Rename column '{}' to '{}' in table '{}'", old_name, new_name, table_name)
+            }
             SchemaChange::RecreateTable { table_name, reason, .. } => {
                 format!("Recreate table '{}': {}", table_name, reason)
             }
@@ -106,6 +111,7 @@ impl SchemaChange {
             SchemaChange::CreateTable { sql, .. } => vec![sql.as_str()],
             SchemaChange::AddColumn { sql, .. } => vec![sql.as_str()],
             SchemaChange::DropColumn { sql, .. } => vec![sql.as_str()],
+            SchemaChange::RenameColumn { sql, .. } => vec![sql.as_str()],
             SchemaChange::RecreateTable { sql, .. } => sql.iter().map(|s| s.as_str()).collect(),
             SchemaChange::CreateIndex { sql, .. } => vec![sql.as_str()],
             SchemaChange::Warning { .. } => vec![],
@@ -210,6 +216,8 @@ pub struct EntityColumnInfo {
     pub is_auto_increment: bool,
     pub is_unique:         bool,
     pub default_value:     Option<&'static str>,
+    /// Previous column name if this column was renamed (for migration renames)
+    pub renamed_from:      Option<&'static str>,
 }
 
 impl EntitySchema {
@@ -226,6 +234,7 @@ impl EntitySchema {
                 is_auto_increment: col.is_auto_increment(),
                 is_unique:         col.is_unique(),
                 default_value:     col.default_value(),
+                renamed_from:      col.renamed_from(),
             })
             .collect();
 
@@ -425,15 +434,45 @@ impl Migrator {
                 let entity_columns: HashMap<&str, &EntityColumnInfo> =
                     entity_schema.columns.iter().map(|c| (c.name, c)).collect();
 
-                // Find columns to add (in entity but not in DB)
+                // Track columns that are being renamed (old names that shouldn't be dropped)
+                let mut renamed_old_columns: std::collections::HashSet<&str> = std::collections::HashSet::new();
+
+                // Find columns to add or rename (in entity but not in DB)
                 for entity_col in &entity_schema.columns {
                     if !db_columns.contains_key(entity_col.name) {
-                        let sql = Self::generate_add_column_sql(table_name, entity_col);
-                        diff.add_change(SchemaChange::AddColumn {
-                            table_name: table_name.to_string(),
-                            column_name: entity_col.name.to_string(),
-                            sql,
-                        });
+                        // Column doesn't exist in DB - check if it's a rename
+                        if let Some(old_name) = entity_col.renamed_from {
+                            if db_columns.contains_key(old_name) {
+                                // Old column exists - this is a rename
+                                let sql = format!(
+                                    "ALTER TABLE {} RENAME COLUMN {} TO {}",
+                                    table_name, old_name, entity_col.name
+                                );
+                                diff.add_change(SchemaChange::RenameColumn {
+                                    table_name: table_name.to_string(),
+                                    old_name: old_name.to_string(),
+                                    new_name: entity_col.name.to_string(),
+                                    sql,
+                                });
+                                renamed_old_columns.insert(old_name);
+                            } else {
+                                // Old column doesn't exist either - just add the new column
+                                let sql = Self::generate_add_column_sql(table_name, entity_col);
+                                diff.add_change(SchemaChange::AddColumn {
+                                    table_name: table_name.to_string(),
+                                    column_name: entity_col.name.to_string(),
+                                    sql,
+                                });
+                            }
+                        } else {
+                            // No rename - just add the new column
+                            let sql = Self::generate_add_column_sql(table_name, entity_col);
+                            diff.add_change(SchemaChange::AddColumn {
+                                table_name: table_name.to_string(),
+                                column_name: entity_col.name.to_string(),
+                                sql,
+                            });
+                        }
                     } else {
                         // Column exists - check for type mismatches
                         let db_col = db_columns[entity_col.name];
@@ -446,10 +485,12 @@ impl Migrator {
                     }
                 }
 
-                // Find columns to drop (in DB but not in entity)
+                // Find columns to drop (in DB but not in entity, and not being renamed)
                 if options.allow_drop_columns {
                     for db_col in &db_info.columns {
-                        if !entity_columns.contains_key(db_col.name.as_str()) {
+                        if !entity_columns.contains_key(db_col.name.as_str())
+                            && !renamed_old_columns.contains(db_col.name.as_str())
+                        {
                             let sql = format!("ALTER TABLE {} DROP COLUMN {}", table_name, db_col.name);
                             diff.add_change(SchemaChange::DropColumn {
                                 table_name: table_name.to_string(),
@@ -459,9 +500,11 @@ impl Migrator {
                         }
                     }
                 } else {
-                    // Warn about extra columns
+                    // Warn about extra columns (but not ones being renamed)
                     for db_col in &db_info.columns {
-                        if !entity_columns.contains_key(db_col.name.as_str()) {
+                        if !entity_columns.contains_key(db_col.name.as_str())
+                            && !renamed_old_columns.contains(db_col.name.as_str())
+                        {
                             diff.add_change(SchemaChange::Warning {
                                 table_name: table_name.to_string(),
                                 message:    format!(
@@ -948,6 +991,7 @@ mod tests {
             is_auto_increment: true,
             is_unique:         false,
             default_value:     None,
+            renamed_from:      None,
         };
         let cloned = col.clone();
         assert_eq!(cloned.name, "id");
@@ -964,6 +1008,7 @@ mod tests {
             is_auto_increment: false,
             is_unique:         true,
             default_value:     Some("''"),
+            renamed_from:      None,
         };
         let debug = format!("{:?}", col);
         assert!(debug.contains("email"));
@@ -994,6 +1039,7 @@ mod tests {
                     is_auto_increment: true,
                     is_unique:         false,
                     default_value:     None,
+                    renamed_from:      None,
                 },
                 EntityColumnInfo {
                     name:              "name",
@@ -1003,6 +1049,7 @@ mod tests {
                     is_auto_increment: false,
                     is_unique:         false,
                     default_value:     None,
+                    renamed_from:      None,
                 },
             ],
         };
@@ -1026,6 +1073,7 @@ mod tests {
                     is_auto_increment: true,
                     is_unique:         false,
                     default_value:     None,
+                    renamed_from:      None,
                 },
                 EntityColumnInfo {
                     name:              "email",
@@ -1035,6 +1083,7 @@ mod tests {
                     is_auto_increment: false,
                     is_unique:         true,
                     default_value:     None,
+                    renamed_from:      None,
                 },
             ],
         };
@@ -1056,6 +1105,7 @@ mod tests {
                     is_auto_increment: true,
                     is_unique:         false,
                     default_value:     None,
+                    renamed_from:      None,
                 },
                 EntityColumnInfo {
                     name:              "status",
@@ -1065,6 +1115,7 @@ mod tests {
                     is_auto_increment: false,
                     is_unique:         false,
                     default_value:     Some("'active'"),
+                    renamed_from:      None,
                 },
             ],
         };
@@ -1086,6 +1137,7 @@ mod tests {
                     is_auto_increment: true,
                     is_unique:         false,
                     default_value:     None,
+                    renamed_from:      None,
                 },
                 EntityColumnInfo {
                     name:              "bio",
@@ -1095,6 +1147,7 @@ mod tests {
                     is_auto_increment: false,
                     is_unique:         false,
                     default_value:     None,
+                    renamed_from:      None,
                 },
             ],
         };
@@ -1116,6 +1169,7 @@ mod tests {
                 is_auto_increment: false, // Not auto-increment
                 is_unique:         false,
                 default_value:     None,
+                renamed_from:      None,
             }],
         };
 
@@ -1135,6 +1189,7 @@ mod tests {
             is_auto_increment: false,
             is_unique:         false,
             default_value:     Some("'active'"),
+            renamed_from:      None,
         };
 
         let sql = Migrator::generate_add_column_sql("users", &col);
@@ -1151,6 +1206,7 @@ mod tests {
             is_auto_increment: false,
             is_unique:         false,
             default_value:     None,
+            renamed_from:      None,
         };
 
         let sql = Migrator::generate_add_column_sql("users", &col);
@@ -1168,6 +1224,7 @@ mod tests {
             is_auto_increment: false,
             is_unique:         false,
             default_value:     None,
+            renamed_from:      None,
         };
 
         let sql = Migrator::generate_add_column_sql("users", &col);
@@ -1185,6 +1242,7 @@ mod tests {
             is_auto_increment: false,
             is_unique:         false,
             default_value:     None,
+            renamed_from:      None,
         };
 
         let sql = Migrator::generate_add_column_sql("stats", &col);
@@ -1201,6 +1259,7 @@ mod tests {
             is_auto_increment: false,
             is_unique:         false,
             default_value:     None,
+            renamed_from:      None,
         };
 
         let sql = Migrator::generate_add_column_sql("products", &col);
@@ -1217,6 +1276,7 @@ mod tests {
             is_auto_increment: false,
             is_unique:         false,
             default_value:     None,
+            renamed_from:      None,
         };
 
         let sql = Migrator::generate_add_column_sql("files", &col);
@@ -1234,6 +1294,7 @@ mod tests {
             is_auto_increment: true,
             is_unique:         false,
             default_value:     None,
+            renamed_from:      None,
         };
         let db_col = DbColumnInfo {
             name:           "id".to_string(),
@@ -1257,6 +1318,7 @@ mod tests {
             is_auto_increment: false,
             is_unique:         false,
             default_value:     None,
+            renamed_from:      None,
         };
         let db_col = DbColumnInfo {
             name:           "age".to_string(),
@@ -1281,6 +1343,7 @@ mod tests {
             is_auto_increment: false,
             is_unique:         false,
             default_value:     None,
+            renamed_from:      None,
         };
         let db_col = DbColumnInfo {
             name:           "email".to_string(),
@@ -1306,6 +1369,7 @@ mod tests {
             is_auto_increment: false,
             is_unique:         false,
             default_value:     None,
+            renamed_from:      None,
         };
         let db_col = DbColumnInfo {
             name:           "id".to_string(),
@@ -1330,6 +1394,7 @@ mod tests {
             is_auto_increment: false,
             is_unique:         false,
             default_value:     None,
+            renamed_from:      None,
         };
         let db_col = DbColumnInfo {
             name:           "name".to_string(),
@@ -1363,6 +1428,7 @@ mod tests {
                     is_auto_increment: true,
                     is_unique:         false,
                     default_value:     None,
+                    renamed_from:      None,
                 },
                 EntityColumnInfo {
                     name:              "name",
@@ -1372,6 +1438,7 @@ mod tests {
                     is_auto_increment: false,
                     is_unique:         false,
                     default_value:     None,
+                    renamed_from:      None,
                 },
             ],
         };
@@ -1379,5 +1446,30 @@ mod tests {
         assert_eq!(schema.columns().len(), 2);
         assert_eq!(schema.columns()[0].name, "id");
         assert_eq!(schema.columns()[1].name, "name");
+    }
+
+    // SchemaChange::RenameColumn tests
+    #[test]
+    fn test_schema_change_description_rename_column() {
+        let change = SchemaChange::RenameColumn {
+            table_name: "users".to_string(),
+            old_name:   "timestamp".to_string(),
+            new_name:   "created_at".to_string(),
+            sql:        "ALTER TABLE users RENAME COLUMN timestamp TO created_at".to_string(),
+        };
+        assert_eq!(change.description(), "Rename column 'timestamp' to 'created_at' in table 'users'");
+    }
+
+    #[test]
+    fn test_schema_change_sql_rename_column() {
+        let change = SchemaChange::RenameColumn {
+            table_name: "users".to_string(),
+            old_name:   "timestamp".to_string(),
+            new_name:   "created_at".to_string(),
+            sql:        "ALTER TABLE users RENAME COLUMN timestamp TO created_at".to_string(),
+        };
+        let stmts = change.sql_statements();
+        assert_eq!(stmts.len(), 1);
+        assert_eq!(stmts[0], "ALTER TABLE users RENAME COLUMN timestamp TO created_at");
     }
 }

@@ -32,6 +32,7 @@ struct FieldInfo {
     is_auto_increment: bool,
     is_unique:         bool,
     default_value:     Option<String>,
+    renamed_from:      Option<String>,
 }
 
 /// Derive macro for creating a database entity model.
@@ -50,8 +51,20 @@ struct FieldInfo {
 ///     pub email: String,
 ///     #[tursorm(column_name = "created_at")]
 ///     pub created_at: Option<String>,
+///     // Rename a column during migration (from "timestamp" to "updated_at")
+///     #[tursorm(renamed_from = "timestamp")]
+///     pub updated_at: i64,
 /// }
 /// ```
+///
+/// # Field Attributes
+///
+/// - `primary_key` - Mark field as primary key
+/// - `auto_increment` - Mark field as auto-increment
+/// - `unique` - Mark field as unique
+/// - `column_name = "name"` - Override the database column name
+/// - `renamed_from = "old_name"` - Rename column from old name during migration
+/// - `default = "value"` - Set default SQL expression
 #[proc_macro_derive(Entity, attributes(tursorm))]
 pub fn derive_entity(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -259,6 +272,18 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
         })
         .collect();
 
+    // Generate renamed_from arms
+    let renamed_from_arms: Vec<_> = field_info
+        .iter()
+        .map(|f| {
+            let variant_name = &f.variant_name;
+            match &f.renamed_from {
+                Some(old_name) => quote! { Self::#variant_name => Some(#old_name) },
+                None => quote! { Self::#variant_name => None },
+            }
+        })
+        .collect();
+
     quote! {
         /// Column enum for #name
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -306,6 +331,12 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
             fn default_value(&self) -> Option<&'static str> {
                 match self {
                     #(#default_value_arms),*
+                }
+            }
+
+            fn renamed_from(&self) -> Option<&'static str> {
+                match self {
+                    #(#renamed_from_arms),*
                 }
             }
 
@@ -487,6 +518,7 @@ fn parse_field_info(field: &Field) -> FieldInfo {
     let mut is_auto_increment = false;
     let mut is_unique = false;
     let mut default_value: Option<String> = None;
+    let mut renamed_from: Option<String> = None;
 
     // Check if the type is Option<T>
     let is_optional = is_option_type(&field_type);
@@ -535,8 +567,31 @@ fn parse_field_info(field: &Field) -> FieldInfo {
                         }
                     }
                 }
+
+                // Parse renamed_from (for migrations)
+                if let Some(start) = tokens.find("renamed_from") {
+                    let rest = &tokens[start..];
+                    if let Some(eq_pos) = rest.find('=') {
+                        let value_part = rest[eq_pos + 1..].trim();
+                        if value_part.starts_with('"') {
+                            if let Some(end) = value_part[1..].find('"') {
+                                renamed_from = Some(value_part[1..end + 1].to_string());
+                            }
+                        }
+                    }
+                }
             }
         }
+    }
+
+    // Validate: auto_increment can only be used on integer types
+    if is_auto_increment && !is_integer_type(&field_type) {
+        panic!(
+            "Field `{}` has `auto_increment` attribute but is not an integer type. \
+             The `auto_increment` attribute can only be used on integer fields \
+             (i8, i16, i32, i64, u8, u16, u32, u64, isize, usize).",
+            field_name
+        );
     }
 
     FieldInfo {
@@ -549,6 +604,7 @@ fn parse_field_info(field: &Field) -> FieldInfo {
         is_auto_increment,
         is_unique,
         default_value,
+        renamed_from,
     }
 }
 
@@ -556,6 +612,21 @@ fn is_option_type(ty: &Type) -> bool {
     if let Type::Path(type_path) = ty {
         if let Some(segment) = type_path.path.segments.last() {
             return segment.ident == "Option";
+        }
+    }
+    false
+}
+
+fn is_integer_type(ty: &Type) -> bool {
+    let inner_type = if is_option_type(ty) { extract_option_inner_type(ty).unwrap_or(ty) } else { ty };
+
+    if let Type::Path(type_path) = inner_type {
+        if let Some(segment) = type_path.path.segments.last() {
+            let type_name = segment.ident.to_string();
+            return matches!(
+                type_name.as_str(),
+                "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "isize" | "usize"
+            );
         }
     }
     false
