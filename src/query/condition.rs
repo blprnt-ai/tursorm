@@ -1,8 +1,8 @@
 //! Query conditions for WHERE clauses
 
-use crate::entity::ColumnTrait;
-use crate::value::IntoValue;
-use crate::value::Value;
+use crate::ColumnTrait;
+use crate::IntoValue;
+use crate::Value;
 
 /// A condition for filtering queries (WHERE clauses)
 ///

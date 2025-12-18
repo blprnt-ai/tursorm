@@ -2,15 +2,15 @@
 
 use std::marker::PhantomData;
 
-use crate::entity::ActiveModelTrait;
-use crate::entity::ColumnTrait;
-use crate::entity::EntityTrait;
-use crate::entity::FromRow;
-use crate::error::Error;
-use crate::error::Result;
-use crate::query::condition::Condition;
-use crate::value::IntoValue;
-use crate::value::Value;
+use crate::ActiveModelTrait;
+use crate::ColumnTrait;
+use crate::Condition;
+use crate::EntityTrait;
+use crate::Error;
+use crate::FromRow;
+use crate::IntoValue;
+use crate::Result;
+use crate::Value;
 
 /// UPDATE query builder for modifying existing records
 ///
@@ -168,11 +168,11 @@ impl<E: EntityTrait> Default for Update<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entity::ActiveValue;
-    use crate::entity::FromRow;
-    use crate::entity::ModelTrait;
-    use crate::entity::set;
-    use crate::value::ColumnType;
+    use crate::ActiveValue;
+    use crate::ColumnType;
+    use crate::FromRow;
+    use crate::ModelTrait;
+    use crate::set;
 
     // Mock Entity and related types for testing
     #[derive(Clone, Debug, PartialEq)]

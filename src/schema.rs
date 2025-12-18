@@ -1,8 +1,8 @@
 //! Database connection wrapper for tursorm
 
 use crate::ColumnTrait;
-use crate::entity::EntityTrait;
-use crate::error::Result;
+use crate::EntityTrait;
+use crate::Result;
 
 /// Schema helper for creating and dropping tables
 ///
@@ -143,10 +143,10 @@ fn column_type_to_sql(col_type: crate::value::ColumnType) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ActiveModelTrait;
+    use crate::ActiveValue;
+    use crate::FromRow;
     use crate::Value;
-    use crate::entity::ActiveModelTrait;
-    use crate::entity::ActiveValue;
-    use crate::entity::FromRow;
     use crate::value::ColumnType;
 
     // Test helpers
@@ -189,7 +189,7 @@ mod tests {
         age:   i64,
     }
 
-    impl crate::entity::ModelTrait for TestModel {
+    impl crate::ModelTrait for TestModel {
         type Entity = TestEntity;
 
         fn get_primary_key_value(&self) -> Value {
@@ -314,7 +314,7 @@ mod tests {
     #[derive(Default)]
     struct TestEntity;
 
-    impl crate::entity::EntityTrait for TestEntity {
+    impl crate::EntityTrait for TestEntity {
         type ActiveModel = TestActiveModel;
         type Column = TestColumn;
         type Model = TestModel;
@@ -439,7 +439,7 @@ mod tests {
         email: String,
     }
 
-    impl crate::entity::ModelTrait for UniqueTestModel {
+    impl crate::ModelTrait for UniqueTestModel {
         type Entity = UniqueTestEntity;
 
         fn get_primary_key_value(&self) -> Value {
@@ -481,7 +481,7 @@ mod tests {
     #[derive(Default)]
     struct UniqueTestEntity;
 
-    impl crate::entity::EntityTrait for UniqueTestEntity {
+    impl crate::EntityTrait for UniqueTestEntity {
         type ActiveModel = UniqueTestActiveModel;
         type Column = UniqueTestColumn;
         type Model = UniqueTestModel;
@@ -569,7 +569,7 @@ mod tests {
         status: String,
     }
 
-    impl crate::entity::ModelTrait for DefaultTestModel {
+    impl crate::ModelTrait for DefaultTestModel {
         type Entity = DefaultTestEntity;
 
         fn get_primary_key_value(&self) -> Value {
@@ -611,7 +611,7 @@ mod tests {
     #[derive(Default)]
     struct DefaultTestEntity;
 
-    impl crate::entity::EntityTrait for DefaultTestEntity {
+    impl crate::EntityTrait for DefaultTestEntity {
         type ActiveModel = DefaultTestActiveModel;
         type Column = DefaultTestColumn;
         type Model = DefaultTestModel;
@@ -694,7 +694,7 @@ mod tests {
         content: String,
     }
 
-    impl crate::entity::ModelTrait for CompositeModel {
+    impl crate::ModelTrait for CompositeModel {
         type Entity = CompositeEntity;
 
         fn get_primary_key_value(&self) -> Value {
@@ -736,7 +736,7 @@ mod tests {
     #[derive(Default)]
     struct CompositeEntity;
 
-    impl crate::entity::EntityTrait for CompositeEntity {
+    impl crate::EntityTrait for CompositeEntity {
         type ActiveModel = CompositeActiveModel;
         type Column = CompositeColumn;
         type Model = CompositeModel;

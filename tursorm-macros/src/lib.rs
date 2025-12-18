@@ -1,38 +1,228 @@
-#![deny(warnings, unused_crate_dependencies)]
-
 //! Procedural macros for tursorm
 //!
 //! This crate provides derive macros for defining database entities.
 
-use convert_case::Case;
-use convert_case::Casing;
-use proc_macro::TokenStream;
+use darling::FromDeriveInput;
+use darling::FromField;
+use darling::FromMeta;
+use proc_macro2::Ident;
 use proc_macro2::TokenStream as TokenStream2;
+use quote::ToTokens;
 use quote::format_ident;
 use quote::quote;
-use syn::Attribute;
-use syn::Data;
 use syn::DeriveInput;
-use syn::Field;
-use syn::Fields;
-use syn::Ident;
-use syn::Lit;
-use syn::Meta;
 use syn::Type;
-use syn::parse_macro_input;
 
-/// Information about a struct field
+// ============================================================================
+// Enums for foreign key actions
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, Default, FromMeta)]
+enum OnDelete {
+    Restrict,
+    Cascade,
+    SetNull,
+    SetDefault,
+    #[default]
+    None,
+}
+
+#[derive(Debug, Clone, Copy, Default, FromMeta)]
+enum OnUpdate {
+    Restrict,
+    Cascade,
+    SetNull,
+    SetDefault,
+    #[default]
+    None,
+}
+
+// ============================================================================
+// Field-level attribute parsing
+// ============================================================================
+
+#[derive(Debug, FromField)]
+#[darling(attributes(tursorm))]
+struct FieldReceiver {
+    pub ident: Option<Ident>,
+    pub ty:    Type,
+
+    #[darling(default)]
+    pub primary_key: bool,
+
+    #[darling(default)]
+    pub auto_increment: bool,
+
+    #[darling(default)]
+    pub unique: bool,
+
+    #[darling(default)]
+    pub column_name: Option<String>,
+
+    #[darling(default)]
+    pub renamed_from: Option<String>,
+
+    #[darling(default)]
+    pub default: Option<String>,
+
+    // Foreign key attributes
+    #[darling(default)]
+    pub foreign_key: bool,
+
+    #[darling(default)]
+    pub references: Option<String>,
+
+    #[darling(default)]
+    pub on_delete: Option<OnDelete>,
+
+    #[darling(default)]
+    pub on_update: Option<OnUpdate>,
+}
+
+// ============================================================================
+// Struct-level attribute parsing
+// ============================================================================
+
+#[derive(Debug, FromDeriveInput)]
+#[darling(attributes(tursorm), supports(struct_named))]
+struct EntityReceiver {
+    pub ident: Ident,
+    pub data:  darling::ast::Data<(), FieldReceiver>,
+
+    #[darling(default)]
+    pub table_name: Option<String>,
+}
+
+// ============================================================================
+// Your cleaned-up domain types
+// ============================================================================
+
+#[derive(Debug)]
+struct ForeignKeyInfo {
+    pub table_name:  String,
+    pub column_name: String,
+    pub on_delete:   OnDelete,
+    pub on_update:   OnUpdate,
+}
+
+impl ToTokens for OnDelete {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        let variant = match self {
+            OnDelete::Restrict => quote! { tursorm::OnDelete::Restrict },
+            OnDelete::Cascade => quote! { tursorm::OnDelete::Cascade },
+            OnDelete::SetNull => quote! { tursorm::OnDelete::SetNull },
+            OnDelete::SetDefault => quote! { tursorm::OnDelete::SetDefault },
+            OnDelete::None => quote! { tursorm::OnDelete::None },
+        };
+        tokens.extend(variant);
+    }
+}
+
+impl ToTokens for OnUpdate {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        let variant = match self {
+            OnUpdate::Restrict => quote! { tursorm::OnUpdate::Restrict },
+            OnUpdate::Cascade => quote! { tursorm::OnUpdate::Cascade },
+            OnUpdate::SetNull => quote! { tursorm::OnUpdate::SetNull },
+            OnUpdate::SetDefault => quote! { tursorm::OnUpdate::SetDefault },
+            OnUpdate::None => quote! { tursorm::OnUpdate::None },
+        };
+        tokens.extend(variant);
+    }
+}
+
+impl ToTokens for ForeignKeyInfo {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        let table_name = &self.table_name;
+        let column_name = &self.column_name;
+        let on_delete = &self.on_delete;
+        let on_update = &self.on_update;
+        tokens.extend(quote! {
+            tursorm::ForeignKeyInfo {
+                table_name: #table_name,
+                column_name: #column_name,
+                on_delete: #on_delete,
+                on_update: #on_update,
+            }
+        });
+    }
+}
+
+#[derive(Debug)]
 struct FieldInfo {
-    field_name:        Ident,
-    variant_name:      Ident,
-    column_name:       String,
-    field_type:        Type,
-    is_primary_key:    bool,
-    is_optional:       bool,
-    is_auto_increment: bool,
-    is_unique:         bool,
-    default_value:     Option<String>,
-    renamed_from:      Option<String>,
+    pub field_name:        Ident,
+    pub variant_name:      Ident,
+    pub column_name:       String,
+    pub field_type:        Type,
+    pub is_primary_key:    bool,
+    pub is_optional:       bool,
+    pub is_auto_increment: bool,
+    pub is_unique:         bool,
+    pub default_value:     Option<String>,
+    pub renamed_from:      Option<String>,
+    pub foreign_key:       Option<ForeignKeyInfo>,
+}
+
+#[derive(Debug)]
+struct EntityInfo {
+    pub struct_name: Ident,
+    pub table_name:  String,
+    pub fields:      Vec<FieldInfo>,
+}
+
+// ============================================================================
+// Conversion logic
+// ============================================================================
+
+impl FieldReceiver {
+    pub fn to_field_info(self) -> FieldInfo {
+        let field_name = self.ident.expect("Expected named field");
+        let is_optional = is_option_type(&self.ty);
+        let variant_name = to_pascal_case(&field_name);
+
+        let column_name = self.column_name.unwrap_or_else(|| field_name.to_string());
+
+        let foreign_key = if self.foreign_key {
+            if self.references.is_none() {
+                panic!("Foreign key must have a references attribute");
+            }
+
+            let (table, col) = parse_references(self.references.unwrap());
+            Some(ForeignKeyInfo {
+                table_name:  table.to_string(),
+                column_name: col.to_string(),
+                on_delete:   self.on_delete.unwrap_or_default(),
+                on_update:   self.on_update.unwrap_or_default(),
+            })
+        } else {
+            None
+        };
+
+        FieldInfo {
+            field_name,
+            variant_name,
+            column_name,
+            field_type: self.ty,
+            is_primary_key: self.primary_key,
+            is_optional,
+            is_auto_increment: self.auto_increment,
+            is_unique: self.unique,
+            default_value: self.default,
+            renamed_from: self.renamed_from,
+            foreign_key,
+        }
+    }
+}
+
+impl EntityReceiver {
+    pub fn to_entity_info(self) -> EntityInfo {
+        let table_name = self.table_name.unwrap_or_else(|| to_snake_case(&self.ident));
+
+        let fields =
+            self.data.take_struct().expect("Expected struct").fields.into_iter().map(|f| f.to_field_info()).collect();
+
+        EntityInfo { struct_name: self.ident, table_name, fields }
+    }
 }
 
 /// Derive macro for creating a database entity model.
@@ -66,34 +256,31 @@ struct FieldInfo {
 /// - `renamed_from = "old_name"` - Rename column from old name during migration
 /// - `default = "value"` - Set default SQL expression
 #[proc_macro_derive(Entity, attributes(tursorm))]
-pub fn derive_entity(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    let expanded = impl_entity(&input);
-    TokenStream::from(expanded)
+pub fn derive_entity(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = syn::parse_macro_input!(input as DeriveInput);
+
+    let receiver = match EntityReceiver::from_derive_input(&input) {
+        Ok(r) => r,
+        Err(e) => return e.write_errors().into(),
+    };
+
+    let entity_info = receiver.to_entity_info();
+
+    let expanded = impl_entity(&entity_info);
+    proc_macro::TokenStream::from(expanded)
 }
 
-fn impl_entity(input: &DeriveInput) -> TokenStream2 {
-    let name = &input.ident;
+fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
+    let name = &entity_info.struct_name;
     let entity_name = format_ident!("{}Entity", name);
     let column_enum_name = format_ident!("{}Column", name);
     let active_model_name = format_ident!("{}ActiveModel", name);
 
-    // Parse table name from attributes
-    let table_name = get_table_name(&input.attrs, name);
-
-    // Get fields
-    let fields = match &input.data {
-        Data::Struct(data) => match &data.fields {
-            Fields::Named(fields) => &fields.named,
-            _ => panic!("Entity derive only supports structs with named fields"),
-        },
-        _ => panic!("Entity derive only supports structs"),
-    };
-
-    let field_info: Vec<FieldInfo> = fields.iter().map(parse_field_info).collect();
+    let table_name = entity_info.table_name.clone();
 
     // Generate Column enum variants
-    let column_variants: Vec<_> = field_info
+    let column_variants: Vec<_> = entity_info
+        .fields
         .iter()
         .map(|f| {
             let variant_name = &f.variant_name;
@@ -102,7 +289,8 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     // Generate column name mappings
-    let column_name_arms: Vec<_> = field_info
+    let column_name_arms: Vec<_> = entity_info
+        .fields
         .iter()
         .map(|f| {
             let variant_name = &f.variant_name;
@@ -112,7 +300,8 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     // Generate column type mappings
-    let column_type_arms: Vec<_> = field_info
+    let column_type_arms: Vec<_> = entity_info
+        .fields
         .iter()
         .map(|f| {
             let variant_name = &f.variant_name;
@@ -121,17 +310,23 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
         })
         .collect();
 
+    let primary_key_fields = entity_info.fields.iter().filter(|f| f.is_primary_key).collect::<Vec<_>>();
+
+    if primary_key_fields.is_empty() {
+        panic!("Entity must have a primary key field marked with #[tursorm(primary_key)]");
+    } else if primary_key_fields.len() > 1 {
+        panic!("Entity must have only one primary key field marked with #[tursorm(primary_key)]");
+    }
+
     // Find primary key
-    let primary_key_field = field_info
-        .iter()
-        .find(|f| f.is_primary_key)
-        .expect("Entity must have a primary key field marked with #[tursorm(primary_key)]");
+    let primary_key_field = primary_key_fields[0];
 
     let pk_variant = &primary_key_field.variant_name;
     let pk_field_name = &primary_key_field.field_name;
 
     // Generate FromRow implementation
-    let from_row_fields: Vec<_> = field_info
+    let from_row_fields: Vec<_> = entity_info
+        .fields
         .iter()
         .enumerate()
         .map(|(idx, f)| {
@@ -149,7 +344,8 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     // Generate ActiveModel fields
-    let active_model_fields: Vec<_> = field_info
+    let active_model_fields: Vec<_> = entity_info
+        .fields
         .iter()
         .map(|f| {
             let field_name = &f.field_name;
@@ -161,7 +357,8 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     // Generate ActiveModel from Model
-    let active_model_from_model_fields: Vec<_> = field_info
+    let active_model_from_model_fields: Vec<_> = entity_info
+        .fields
         .iter()
         .map(|f| {
             let field_name = &f.field_name;
@@ -172,7 +369,8 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     // Generate insert columns and values (skip auto_increment fields that are NotSet)
-    let insert_set_arms: Vec<_> = field_info
+    let insert_set_arms: Vec<_> = entity_info
+        .fields
         .iter()
         .map(|f| {
             let field_name = &f.field_name;
@@ -196,7 +394,8 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     // Generate update set arms (exclude primary key)
-    let update_set_arms: Vec<_> = field_info
+    let update_set_arms: Vec<_> = entity_info
+        .fields
         .iter()
         .filter(|f| !f.is_primary_key)
         .map(|f| {
@@ -214,14 +413,15 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
     let pk_is_auto_increment = primary_key_field.is_auto_increment;
 
     // All column names for SELECT *
-    let all_columns: Vec<_> = field_info.iter().map(|f| f.column_name.as_str()).collect();
+    let all_columns: Vec<_> = entity_info.fields.iter().map(|f| f.column_name.as_str()).collect();
     let all_columns_str = all_columns.join(", ");
 
     // Column count
-    let column_count = field_info.len();
+    let column_count = entity_info.fields.len();
 
     // Generate is_nullable arms
-    let is_nullable_arms: Vec<_> = field_info
+    let is_nullable_arms: Vec<_> = entity_info
+        .fields
         .iter()
         .map(|f| {
             let variant_name = &f.variant_name;
@@ -231,7 +431,8 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     // Generate is_primary_key arms
-    let is_primary_key_arms: Vec<_> = field_info
+    let is_primary_key_arms: Vec<_> = entity_info
+        .fields
         .iter()
         .map(|f| {
             let variant_name = &f.variant_name;
@@ -241,7 +442,8 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     // Generate is_auto_increment arms
-    let is_auto_increment_arms: Vec<_> = field_info
+    let is_auto_increment_arms: Vec<_> = entity_info
+        .fields
         .iter()
         .map(|f| {
             let variant_name = &f.variant_name;
@@ -251,7 +453,8 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     // Generate is_unique arms
-    let is_unique_arms: Vec<_> = field_info
+    let is_unique_arms: Vec<_> = entity_info
+        .fields
         .iter()
         .map(|f| {
             let variant_name = &f.variant_name;
@@ -261,7 +464,8 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     // Generate default_value arms
-    let default_value_arms: Vec<_> = field_info
+    let default_value_arms: Vec<_> = entity_info
+        .fields
         .iter()
         .map(|f| {
             let variant_name = &f.variant_name;
@@ -273,12 +477,39 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     // Generate renamed_from arms
-    let renamed_from_arms: Vec<_> = field_info
+    let renamed_from_arms: Vec<_> = entity_info
+        .fields
         .iter()
         .map(|f| {
             let variant_name = &f.variant_name;
             match &f.renamed_from {
                 Some(old_name) => quote! { Self::#variant_name => Some(#old_name) },
+                None => quote! { Self::#variant_name => None },
+            }
+        })
+        .collect();
+
+    // Generate foreign_key arms
+    let foreign_key_arms: Vec<_> = entity_info
+        .fields
+        .iter()
+        .map(|f| {
+            let variant_name = &f.variant_name;
+            match &f.foreign_key {
+                Some(fk) => {
+                    let table_name = &fk.table_name;
+                    let column_name = &fk.column_name;
+                    let on_delete = fk.on_delete;
+                    let on_update = fk.on_update;
+                    quote! {
+                        Self::#variant_name => Some(tursorm::ForeignKeyInfo {
+                            table_name: String::from(#table_name),
+                            column_name: String::from(#column_name),
+                            on_delete: #on_delete,
+                            on_update: #on_update,
+                        })
+                    }
+                }
                 None => quote! { Self::#variant_name => None },
             }
         })
@@ -337,6 +568,12 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
             fn renamed_from(&self) -> Option<&'static str> {
                 match self {
                     #(#renamed_from_arms),*
+                }
+            }
+
+            fn foreign_key(&self) -> Option<ForeignKeyInfo> {
+                match self {
+                    #(#foreign_key_arms),*
                 }
             }
 
@@ -481,165 +718,9 @@ fn impl_entity(input: &DeriveInput) -> TokenStream2 {
     }
 }
 
-fn get_table_name(attrs: &[Attribute], struct_name: &Ident) -> String {
-    for attr in attrs {
-        if attr.path().is_ident("tursorm") {
-            if let Ok(nested) = attr.parse_args::<syn::Meta>() {
-                if let Meta::NameValue(nv) = nested {
-                    if nv.path.is_ident("table_name") {
-                        if let syn::Expr::Lit(expr_lit) = &nv.value {
-                            if let Lit::Str(lit_str) = &expr_lit.lit {
-                                return lit_str.value();
-                            }
-                        }
-                    }
-                }
-            }
-            // Try parsing as a list
-            if let Ok(list) = attr.meta.require_list() {
-                let tokens = list.tokens.to_string();
-                if let Some(start) = tokens.find("table_name") {
-                    let rest = &tokens[start..];
-                    if let Some(eq_pos) = rest.find('=') {
-                        let value_part = rest[eq_pos + 1..].trim();
-                        if value_part.starts_with('"') {
-                            if let Some(end) = value_part[1..].find('"') {
-                                return value_part[1..end + 1].to_string();
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // Default: convert struct name to snake_case and pluralize
-    let snake = struct_name.to_string().to_case(Case::Snake);
-    format!("{}s", snake)
-}
-
-fn parse_field_info(field: &Field) -> FieldInfo {
-    let field_name = field.ident.clone().expect("Field must have a name");
-    let variant_name = format_ident!("{}", field_name.to_string().to_case(Case::Pascal));
-    let field_type = field.ty.clone();
-
-    let mut column_name = field_name.to_string().to_case(Case::Snake);
-    let mut is_primary_key = false;
-    let mut is_auto_increment = false;
-    let mut is_unique = false;
-    let mut default_value: Option<String> = None;
-    let mut renamed_from: Option<String> = None;
-
-    // Check if the type is Option<T>
-    let is_optional = is_option_type(&field_type);
-
-    // Parse field attributes
-    for attr in &field.attrs {
-        if attr.path().is_ident("tursorm") {
-            if let Ok(list) = attr.meta.require_list() {
-                let tokens = list.tokens.to_string();
-
-                if tokens.contains("primary_key") {
-                    is_primary_key = true;
-                }
-
-                if tokens.contains("auto_increment") {
-                    is_auto_increment = true;
-                }
-
-                if tokens.contains("unique") && !tokens.contains("primary_key") {
-                    // unique as a standalone attribute (not part of primary_key)
-                    is_unique = true;
-                }
-
-                // Parse column_name
-                if let Some(start) = tokens.find("column_name") {
-                    let rest = &tokens[start..];
-                    if let Some(eq_pos) = rest.find('=') {
-                        let value_part = rest[eq_pos + 1..].trim();
-                        if value_part.starts_with('"') {
-                            if let Some(end) = value_part[1..].find('"') {
-                                column_name = value_part[1..end + 1].to_string();
-                            }
-                        }
-                    }
-                }
-
-                // Parse default value
-                if let Some(start) = tokens.find("default") {
-                    let rest = &tokens[start..];
-                    if let Some(eq_pos) = rest.find('=') {
-                        let value_part = rest[eq_pos + 1..].trim();
-                        if value_part.starts_with('"') {
-                            if let Some(end) = value_part[1..].find('"') {
-                                default_value = Some(value_part[1..end + 1].to_string());
-                            }
-                        }
-                    }
-                }
-
-                // Parse renamed_from (for migrations)
-                if let Some(start) = tokens.find("renamed_from") {
-                    let rest = &tokens[start..];
-                    if let Some(eq_pos) = rest.find('=') {
-                        let value_part = rest[eq_pos + 1..].trim();
-                        if value_part.starts_with('"') {
-                            if let Some(end) = value_part[1..].find('"') {
-                                renamed_from = Some(value_part[1..end + 1].to_string());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Validate: auto_increment can only be used on integer types
-    if is_auto_increment && !is_integer_type(&field_type) {
-        panic!(
-            "Field `{}` has `auto_increment` attribute but is not an integer type. \
-             The `auto_increment` attribute can only be used on integer fields \
-             (i8, i16, i32, i64, u8, u16, u32, u64, isize, usize).",
-            field_name
-        );
-    }
-
-    FieldInfo {
-        field_name,
-        variant_name,
-        column_name,
-        field_type,
-        is_primary_key,
-        is_optional,
-        is_auto_increment,
-        is_unique,
-        default_value,
-        renamed_from,
-    }
-}
-
-fn is_option_type(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            return segment.ident == "Option";
-        }
-    }
-    false
-}
-
-fn is_integer_type(ty: &Type) -> bool {
-    let inner_type = if is_option_type(ty) { extract_option_inner_type(ty).unwrap_or(ty) } else { ty };
-
-    if let Type::Path(type_path) = inner_type {
-        if let Some(segment) = type_path.path.segments.last() {
-            let type_name = segment.ident.to_string();
-            return matches!(
-                type_name.as_str(),
-                "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "isize" | "usize"
-            );
-        }
-    }
-    false
-}
+// ============================================================================
+// Helper functions
+// ============================================================================
 
 fn rust_type_to_column_type(ty: &Type, is_optional: bool) -> TokenStream2 {
     let inner_type = if is_optional { extract_option_inner_type(ty).unwrap_or(ty) } else { ty };
@@ -705,4 +786,50 @@ fn extract_vec_inner_type(ty: &Type) -> Option<&Type> {
         }
     }
     None
+}
+
+fn is_option_type(ty: &Type) -> bool {
+    if let Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            return segment.ident == "Option";
+        }
+    }
+    false
+}
+
+fn to_pascal_case(ident: &Ident) -> Ident {
+    let s = ident.to_string();
+    let pascal: String = s
+        .split('_')
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(c) => c.to_uppercase().chain(chars).collect(),
+                None => String::new(),
+            }
+        })
+        .collect();
+    Ident::new(&pascal, ident.span())
+}
+
+fn to_snake_case(ident: &Ident) -> String {
+    let s = ident.to_string();
+    let mut result = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if c.is_uppercase() && i > 0 {
+            result.push('_');
+        }
+        result.push(c.to_lowercase().next().unwrap());
+    }
+    result
+}
+
+fn parse_references(refs: String) -> (String, String) {
+    // Parse "table_name.column_name" format
+    let parts: Vec<&str> = refs.splitn(2, '.').collect();
+    match parts.as_slice() {
+        [table, column] => (table.to_string(), column.to_string()),
+        [table] => (table.to_string(), "id".to_string()), // default to "id"
+        _ => panic!("Invalid references format: {}", refs),
+    }
 }

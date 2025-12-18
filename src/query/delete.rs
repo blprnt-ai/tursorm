@@ -2,11 +2,10 @@
 
 use std::marker::PhantomData;
 
-use crate::ModelTrait;
-use crate::entity::EntityTrait;
-use crate::error::Result;
-use crate::query::condition::Condition;
-use crate::value::Value;
+use crate::Condition;
+use crate::EntityTrait;
+use crate::Result;
+use crate::Value;
 
 /// DELETE query builder for removing records from the database
 ///
@@ -88,34 +87,16 @@ impl<E: EntityTrait> Default for Delete<E> {
     }
 }
 
-/// Delete a model by its primary key
-///
-/// Convenience function to delete a record using its model instance.
-/// The primary key value is extracted from the model automatically.
-///
-/// # Example
-///
-/// ```ignore
-/// let user = User::find_by_id(1).one(&conn).await?.unwrap();
-/// delete_by_model::<UserEntity>(&conn, &user).await?;
-/// ```
-pub async fn delete_by_model<E: EntityTrait>(conn: &crate::Connection, model: &E::Model) -> Result<u64>
-where E::Model: ModelTrait {
-    let pk_value = model.get_primary_key_value();
-    let pk_column = E::primary_key();
-
-    Delete::<E>::new().filter(Condition::eq(pk_column, pk_value)).exec(conn).await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entity::ActiveModelTrait;
-    use crate::entity::ActiveValue;
-    use crate::entity::ColumnTrait;
-    use crate::entity::FromRow;
-    use crate::value::ColumnType;
-    use crate::value::Value;
+    use crate::ActiveModelTrait;
+    use crate::ActiveValue;
+    use crate::ColumnTrait;
+    use crate::ColumnType;
+    use crate::FromRow;
+    use crate::ModelTrait;
+    use crate::Value;
 
     // Mock Entity and related types for testing
     #[derive(Clone, Debug, PartialEq)]

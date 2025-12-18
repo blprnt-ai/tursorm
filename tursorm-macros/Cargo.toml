@@ -9,7 +9,8 @@ license = "MIT"
 proc-macro = true
 
 [dependencies]
+convert_case = "0.10.0"
+darling = "0.23.0"
 proc-macro2 = "1.0.103"
 quote = "1.0.42"
 syn = { version = "2.0.111", features = ["full", "extra-traits"] }
-convert_case = "0.10.0"

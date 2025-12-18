@@ -1,10 +1,13 @@
-mod builder;
-mod database;
-mod opts;
+pub(crate) mod builder;
+pub(crate) mod database;
+pub(crate) mod opts;
+
+pub mod prelude {
+    pub use super::Connection;
+    pub use super::builder::Builder;
+}
 
 pub(self) type ConnectionResult<T> = std::result::Result<T, turso::Error>;
-
-pub use builder::Builder;
 
 #[derive(Debug, Clone)]
 pub struct Connection {

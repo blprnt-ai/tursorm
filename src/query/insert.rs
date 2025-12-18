@@ -2,11 +2,11 @@
 
 use std::marker::PhantomData;
 
-use crate::entity::ActiveModelTrait;
-use crate::entity::EntityTrait;
-use crate::error::Error;
-use crate::error::Result;
-use crate::value::Value;
+use crate::ActiveModelTrait;
+use crate::EntityTrait;
+use crate::Error;
+use crate::Result;
+use crate::Value;
 
 /// INSERT query builder for adding new records to the database
 ///
@@ -187,14 +187,14 @@ impl<E: EntityTrait> InsertMany<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entity::ActiveValue;
-    use crate::entity::ColumnTrait;
-    use crate::entity::FromRow;
-    use crate::entity::ModelTrait;
-    use crate::entity::set;
-    use crate::value::ColumnType;
+    use crate::ActiveValue;
+    use crate::ColumnTrait;
+    use crate::ColumnType;
+    use crate::FromRow;
     #[allow(unused_imports)]
-    use crate::value::IntoValue;
+    use crate::IntoValue;
+    use crate::ModelTrait;
+    use crate::set;
 
     // Mock Entity and related types for testing
     #[derive(Clone, Debug, PartialEq)]

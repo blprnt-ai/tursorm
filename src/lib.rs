@@ -152,44 +152,14 @@
 //!     .await?;
 //! ```
 
-pub mod connection;
-pub mod entity;
-pub mod error;
+pub(crate) mod connection;
+pub(crate) mod error;
+pub(crate) mod query;
+pub(crate) mod schema;
+pub(crate) mod traits;
+pub(crate) mod value;
+
 pub mod migration;
+
 pub mod prelude;
-pub mod query;
-pub mod schema;
-pub mod value;
-// Re-export main types at crate root
-pub use connection::Builder;
-pub use connection::Connection;
-pub use entity::ActiveModelTrait;
-pub use entity::ActiveValue;
-pub use entity::ColumnTrait;
-pub use entity::EntityTrait;
-pub use entity::FromRow;
-pub use entity::ModelTrait;
-pub use entity::not_set;
-pub use entity::set;
-pub use error::Error;
-pub use error::Result;
-pub use query::Condition;
-pub use query::Delete;
-pub use query::Insert;
-pub use query::InsertMany;
-pub use query::Order;
-pub use query::OrderBy;
-pub use query::Select;
-pub use query::Update;
-pub use schema::Schema;
-pub use turso::Row;
-pub use turso::Rows;
-// Re-export the derive macro
-pub use tursorm_macros::Entity;
-pub use value::ColumnType;
-pub use value::FromValue;
-pub use value::IntoValue;
-// Re-export optional types
-#[cfg(feature = "with-json")]
-pub use value::Json;
-pub use value::Value;
+pub use prelude::*;

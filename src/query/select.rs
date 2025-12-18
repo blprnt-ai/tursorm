@@ -2,15 +2,15 @@
 
 use std::marker::PhantomData;
 
-use crate::entity::ColumnTrait;
-use crate::entity::EntityTrait;
-use crate::entity::FromRow;
-use crate::entity::ModelTrait;
-use crate::error::Result;
-use crate::query::condition::Condition;
-use crate::query::condition::Order;
-use crate::query::condition::OrderBy;
-use crate::value::Value;
+use crate::ColumnTrait;
+use crate::Condition;
+use crate::EntityTrait;
+use crate::FromRow;
+use crate::ModelTrait;
+use crate::Order;
+use crate::OrderBy;
+use crate::Result;
+use crate::Value;
 
 /// SELECT query builder for retrieving records from the database
 ///
@@ -264,11 +264,11 @@ impl<M: ModelTrait> SelectExt for M {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entity::ActiveModelTrait;
-    use crate::entity::ActiveValue;
-    use crate::entity::FromRow;
-    use crate::value::ColumnType;
-    use crate::value::IntoValue;
+    use crate::ActiveModelTrait;
+    use crate::ActiveValue;
+    use crate::ColumnType;
+    use crate::FromRow;
+    use crate::IntoValue;
 
     // Mock Entity and related types for testing
     #[derive(Clone, Debug, PartialEq)]

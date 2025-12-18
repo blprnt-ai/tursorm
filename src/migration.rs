@@ -27,9 +27,12 @@
 
 use std::collections::HashMap;
 
-use crate::entity::ColumnTrait;
-use crate::entity::EntityTrait;
+use crate::ForeignKeyInfo;
+use crate::OnDelete;
+use crate::OnUpdate;
 use crate::error::Result;
+use crate::traits::column::ColumnTrait;
+use crate::traits::entity::EntityTrait;
 use crate::value::ColumnType;
 
 /// Information about a column in the database
@@ -161,6 +164,75 @@ impl SchemaDiff {
     }
 }
 
+/// Represents a foreign key change
+///
+/// Only create foreign key changes are supported on table creation..
+/// Dropping or modifying foreign keys is not supported.
+#[derive(Debug, Clone)]
+pub enum ForeignKeyChange {
+    /// Create a new foreign key
+    CreateForeignKey { table_name: String, column_name: String, sql: String },
+}
+
+impl ForeignKeyChange {
+    /// Get a description of this change
+    pub fn description(&self) -> String {
+        match self {
+            ForeignKeyChange::CreateForeignKey { table_name, column_name, .. } => {
+                format!("Create foreign key '{}' on table '{}'", column_name, table_name)
+            }
+        }
+    }
+
+    /// Get the SQL statements for this change
+    pub fn sql_statements(&self) -> Vec<&str> {
+        match self {
+            ForeignKeyChange::CreateForeignKey { sql, .. } => vec![sql.as_str()],
+        }
+    }
+}
+
+/// Result of a foreign key diff operation
+#[derive(Debug, Clone)]
+pub struct ForeignKeyDiff {
+    /// Changes that need to be applied
+    pub changes:     Vec<ForeignKeyChange>,
+    /// Whether there are any changes to apply
+    pub has_changes: bool,
+}
+
+impl ForeignKeyDiff {
+    /// Create an empty diff
+    pub fn empty() -> Self {
+        Self { changes: Vec::new(), has_changes: false }
+    }
+
+    /// Add a change
+    pub fn add_change(&mut self, change: ForeignKeyChange) {
+        self.has_changes = true;
+        self.changes.push(change);
+    }
+
+    /// Expand the changes with additional changes
+    pub fn expand(&mut self, changes: Vec<ForeignKeyChange>) {
+        self.changes.extend(changes);
+    }
+
+    /// Get all SQL statements to apply
+    pub fn all_sql(&self) -> Vec<&str> {
+        self.changes.iter().flat_map(|c| c.sql_statements()).collect()
+    }
+
+    /// Print a summary of changes
+    pub fn summary(&self) -> String {
+        if self.changes.is_empty() {
+            "No changes needed".to_string()
+        } else {
+            self.changes.iter().map(|c| c.description()).collect::<Vec<String>>().join("\n")
+        }
+    }
+}
+
 /// Options for controlling migration behavior
 ///
 /// These options allow you to customize how migrations are applied,
@@ -218,6 +290,7 @@ pub struct EntityColumnInfo {
     pub default_value:     Option<&'static str>,
     /// Previous column name if this column was renamed (for migration renames)
     pub renamed_from:      Option<&'static str>,
+    pub foreign_key:       Option<ForeignKeyInfo>,
 }
 
 impl EntitySchema {
@@ -235,6 +308,7 @@ impl EntitySchema {
                 is_unique:         col.is_unique(),
                 default_value:     col.default_value(),
                 renamed_from:      col.renamed_from(),
+                foreign_key:       col.foreign_key(),
             })
             .collect();
 
@@ -268,7 +342,6 @@ impl EntitySchema {
 ///
 /// - Column drops require `allow_drop_columns` option
 /// - Some column modifications (like type changes) require table recreation
-/// - Foreign keys are not currently supported
 pub struct Migrator;
 
 impl Migrator {
@@ -485,26 +558,20 @@ impl Migrator {
                     }
                 }
 
-                // Find columns to drop (in DB but not in entity, and not being renamed)
-                if options.allow_drop_columns {
-                    for db_col in &db_info.columns {
-                        if !entity_columns.contains_key(db_col.name.as_str())
-                            && !renamed_old_columns.contains(db_col.name.as_str())
-                        {
+                for db_col in &db_info.columns {
+                    if !entity_columns.contains_key(db_col.name.as_str())
+                        && !renamed_old_columns.contains(db_col.name.as_str())
+                    {
+                        if options.allow_drop_columns {
+                            // Find columns to drop (in DB but not in entity, and not being renamed)
                             let sql = format!("ALTER TABLE {} DROP COLUMN {}", table_name, db_col.name);
                             diff.add_change(SchemaChange::DropColumn {
                                 table_name: table_name.to_string(),
                                 column_name: db_col.name.clone(),
                                 sql,
                             });
-                        }
-                    }
-                } else {
-                    // Warn about extra columns (but not ones being renamed)
-                    for db_col in &db_info.columns {
-                        if !entity_columns.contains_key(db_col.name.as_str())
-                            && !renamed_old_columns.contains(db_col.name.as_str())
-                        {
+                        } else {
+                            // Warn about extra columns (but not ones being renamed)
                             diff.add_change(SchemaChange::Warning {
                                 table_name: table_name.to_string(),
                                 message:    format!(
@@ -516,8 +583,9 @@ impl Migrator {
                     }
                 }
 
-                // Check for unique constraints that need to be added
+                // MVCC does not support indexes, so we skip this for MVCC databases
                 if !conn.is_mvcc_enabled() {
+                    // Check for unique constraints that need to be added
                     for entity_col in &entity_schema.columns {
                         if entity_col.is_unique && !entity_col.is_primary_key {
                             // Check if unique index exists
@@ -556,6 +624,9 @@ impl Migrator {
             return Ok(diff);
         }
 
+        // Turn off foreign key constraints
+        conn.execute("PRAGMA foreign_keys = OFF", ()).await?;
+
         // Apply changes
         for change in &diff.changes {
             if options.verbose {
@@ -569,6 +640,9 @@ impl Migrator {
                 conn.execute(sql, ()).await?;
             }
         }
+
+        // Turn on foreign key constraints
+        conn.execute("PRAGMA foreign_keys = ON", ()).await?;
 
         Ok(diff)
     }
@@ -623,7 +697,43 @@ impl Migrator {
             column_defs.push(format!("PRIMARY KEY ({})", primary_keys.join(", ")));
         }
 
-        format!("CREATE TABLE {} (\n  {}\n)", schema.table_name, column_defs.join(",\n  "))
+        column_defs.extend(Self::generate_create_foreign_key_changes(schema));
+
+        format!("CREATE TABLE {} ({})", schema.table_name, column_defs.join(", "))
+    }
+
+    /// Generate CREATE FOREIGN KEY SQL from entity schema
+    fn generate_create_foreign_key_changes(schema: &EntitySchema) -> Vec<String> {
+        schema
+            .columns
+            .iter()
+            .filter(|col| col.foreign_key.is_some())
+            .map(Self::generate_create_foreign_key_sql_from_column)
+            .collect()
+    }
+
+    /// Generate CREATE FOREIGN KEY SQL from entity column
+    fn generate_create_foreign_key_sql_from_column(col: &EntityColumnInfo) -> String {
+        let foreign_key_info = col.foreign_key.as_ref().unwrap();
+        let base_sql = format!("FOREIGN KEY ({}) REFERENCES {}", col.name, foreign_key_info.table_name);
+
+        let on_delete = match foreign_key_info.on_delete {
+            OnDelete::Restrict => "ON DELETE RESTRICT",
+            OnDelete::Cascade => "ON DELETE CASCADE",
+            OnDelete::SetNull => " ON DELETE SET NULL",
+            OnDelete::SetDefault => " ON DELETE SET DEFAULT",
+            OnDelete::None => "",
+        };
+
+        let on_update = match foreign_key_info.on_update {
+            OnUpdate::Restrict => "ON UPDATE RESTRICT",
+            OnUpdate::Cascade => "ON UPDATE CASCADE",
+            OnUpdate::SetNull => "ON UPDATE SET NULL",
+            OnUpdate::SetDefault => "ON UPDATE SET DEFAULT",
+            OnUpdate::None => "",
+        };
+
+        format!("{} {} {}", base_sql, on_delete, on_update)
     }
 
     /// Generate ALTER TABLE ADD COLUMN SQL
@@ -994,6 +1104,7 @@ mod tests {
             is_unique:         false,
             default_value:     None,
             renamed_from:      None,
+            foreign_key:       None,
         };
         let cloned = col.clone();
         assert_eq!(cloned.name, "id");
@@ -1011,6 +1122,7 @@ mod tests {
             is_unique:         true,
             default_value:     Some("''"),
             renamed_from:      None,
+            foreign_key:       None,
         };
         let debug = format!("{:?}", col);
         assert!(debug.contains("email"));
@@ -1042,6 +1154,7 @@ mod tests {
                     is_unique:         false,
                     default_value:     None,
                     renamed_from:      None,
+                    foreign_key:       None,
                 },
                 EntityColumnInfo {
                     name:              "name",
@@ -1052,6 +1165,7 @@ mod tests {
                     is_unique:         false,
                     default_value:     None,
                     renamed_from:      None,
+                    foreign_key:       None,
                 },
             ],
         };
@@ -1076,6 +1190,7 @@ mod tests {
                     is_unique:         false,
                     default_value:     None,
                     renamed_from:      None,
+                    foreign_key:       None,
                 },
                 EntityColumnInfo {
                     name:              "email",
@@ -1086,6 +1201,7 @@ mod tests {
                     is_unique:         true,
                     default_value:     None,
                     renamed_from:      None,
+                    foreign_key:       None,
                 },
             ],
         };
@@ -1108,6 +1224,7 @@ mod tests {
                     is_unique:         false,
                     default_value:     None,
                     renamed_from:      None,
+                    foreign_key:       None,
                 },
                 EntityColumnInfo {
                     name:              "status",
@@ -1118,6 +1235,7 @@ mod tests {
                     is_unique:         false,
                     default_value:     Some("'active'"),
                     renamed_from:      None,
+                    foreign_key:       None,
                 },
             ],
         };
@@ -1140,6 +1258,7 @@ mod tests {
                     is_unique:         false,
                     default_value:     None,
                     renamed_from:      None,
+                    foreign_key:       None,
                 },
                 EntityColumnInfo {
                     name:              "bio",
@@ -1150,6 +1269,7 @@ mod tests {
                     is_unique:         false,
                     default_value:     None,
                     renamed_from:      None,
+                    foreign_key:       None,
                 },
             ],
         };
@@ -1172,6 +1292,7 @@ mod tests {
                 is_unique:         false,
                 default_value:     None,
                 renamed_from:      None,
+                foreign_key:       None,
             }],
         };
 
@@ -1192,6 +1313,7 @@ mod tests {
             is_unique:         false,
             default_value:     Some("'active'"),
             renamed_from:      None,
+            foreign_key:       None,
         };
 
         let sql = Migrator::generate_add_column_sql("users", &col);
@@ -1209,6 +1331,7 @@ mod tests {
             is_unique:         false,
             default_value:     None,
             renamed_from:      None,
+            foreign_key:       None,
         };
 
         let sql = Migrator::generate_add_column_sql("users", &col);
@@ -1227,6 +1350,7 @@ mod tests {
             is_unique:         false,
             default_value:     None,
             renamed_from:      None,
+            foreign_key:       None,
         };
 
         let sql = Migrator::generate_add_column_sql("users", &col);
@@ -1245,6 +1369,7 @@ mod tests {
             is_unique:         false,
             default_value:     None,
             renamed_from:      None,
+            foreign_key:       None,
         };
 
         let sql = Migrator::generate_add_column_sql("stats", &col);
@@ -1262,6 +1387,7 @@ mod tests {
             is_unique:         false,
             default_value:     None,
             renamed_from:      None,
+            foreign_key:       None,
         };
 
         let sql = Migrator::generate_add_column_sql("products", &col);
@@ -1279,6 +1405,7 @@ mod tests {
             is_unique:         false,
             default_value:     None,
             renamed_from:      None,
+            foreign_key:       None,
         };
 
         let sql = Migrator::generate_add_column_sql("files", &col);
@@ -1297,6 +1424,7 @@ mod tests {
             is_unique:         false,
             default_value:     None,
             renamed_from:      None,
+            foreign_key:       None,
         };
         let db_col = DbColumnInfo {
             name:           "id".to_string(),
@@ -1321,6 +1449,7 @@ mod tests {
             is_unique:         false,
             default_value:     None,
             renamed_from:      None,
+            foreign_key:       None,
         };
         let db_col = DbColumnInfo {
             name:           "age".to_string(),
@@ -1346,6 +1475,7 @@ mod tests {
             is_unique:         false,
             default_value:     None,
             renamed_from:      None,
+            foreign_key:       None,
         };
         let db_col = DbColumnInfo {
             name:           "email".to_string(),
@@ -1372,6 +1502,7 @@ mod tests {
             is_unique:         false,
             default_value:     None,
             renamed_from:      None,
+            foreign_key:       None,
         };
         let db_col = DbColumnInfo {
             name:           "id".to_string(),
@@ -1397,6 +1528,7 @@ mod tests {
             is_unique:         false,
             default_value:     None,
             renamed_from:      None,
+            foreign_key:       None,
         };
         let db_col = DbColumnInfo {
             name:           "name".to_string(),
@@ -1431,6 +1563,7 @@ mod tests {
                     is_unique:         false,
                     default_value:     None,
                     renamed_from:      None,
+                    foreign_key:       None,
                 },
                 EntityColumnInfo {
                     name:              "name",
@@ -1441,6 +1574,7 @@ mod tests {
                     is_unique:         false,
                     default_value:     None,
                     renamed_from:      None,
+                    foreign_key:       None,
                 },
             ],
         };
