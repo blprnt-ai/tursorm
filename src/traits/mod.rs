@@ -1,15 +1,3 @@
-//! Entity and model traits for tursorm
-//!
-//! This module defines the core traits that enable the ORM functionality:
-//!
-//! - [`EntityTrait`] - Defines table metadata (name, columns, primary key)
-//! - [`ModelTrait`] - Represents a database row as a Rust struct
-//! - [`ActiveModelTrait`] - Mutable model for insert/update operations
-//! - [`ColumnTrait`] - Column metadata (name, type, constraints)
-//! - [`FromRow`] - Converts database rows to model instances
-//!
-//! These traits are typically implemented by the `#[derive(Entity)]` macro.
-
 pub(crate) mod active_model;
 pub(crate) mod active_value;
 pub(crate) mod column;
@@ -35,7 +23,6 @@ pub mod prelude {
 mod tests {
     use super::prelude::*;
 
-    // ActiveValue tests
     #[test]
     fn test_active_value_set() {
         let val = ActiveValue::Set(42);
@@ -137,7 +124,6 @@ mod tests {
         assert!(format!("{:?}", not_set_val).contains("NotSet"));
     }
 
-    // Test with different types
     #[test]
     fn test_active_value_with_string() {
         let val = set(String::from("hello"));
@@ -159,7 +145,6 @@ mod tests {
         assert_eq!(val.get(), Some(&Some(42)));
     }
 
-    // Test chained operations
     #[test]
     fn test_active_value_get_then_use() {
         let val = set(42);
@@ -184,7 +169,7 @@ mod tests {
         let val: ActiveValue<i32> = not_set();
         match val {
             ActiveValue::Set(_) => panic!("Expected NotSet value"),
-            ActiveValue::NotSet => {} // Success
+            ActiveValue::NotSet => {}
         }
     }
 }

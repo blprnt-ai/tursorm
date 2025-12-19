@@ -1,19 +1,5 @@
-//! Integration tests for tursorm using in-memory SQLite database
-//!
-//! These tests verify the full ORM workflow including:
-//! - Table creation and schema management
-//! - CRUD operations (Create, Read, Update, Delete)
-//! - Query builder functionality
-//! - Migrations
-//! - Error handling
-
 use tursorm::prelude::*;
 
-// =============================================================================
-// Test Entity Definitions
-// =============================================================================
-
-/// User entity for testing basic CRUD operations
 #[derive(Clone, Debug, PartialEq, Entity)]
 #[tursorm(table_name = "users")]
 pub struct User {
@@ -24,7 +10,6 @@ pub struct User {
     pub age:   Option<i64>,
 }
 
-/// Post entity for testing relationships and more complex queries
 #[derive(Clone, Debug, PartialEq, Entity)]
 #[tursorm(table_name = "posts")]
 pub struct Post {
@@ -33,10 +18,9 @@ pub struct Post {
     pub user_id:   i64,
     pub title:     String,
     pub content:   String,
-    pub published: i64, // SQLite doesn't have bool, use 0/1
+    pub published: i64,
 }
 
-/// Product entity for testing default values and unique constraints
 #[derive(Clone, Debug, PartialEq, Entity)]
 #[tursorm(table_name = "products")]
 pub struct Product {
@@ -49,17 +33,11 @@ pub struct Product {
     pub quantity: i64,
 }
 
-// =============================================================================
-// Helper Functions
-// =============================================================================
-
-/// Create an in-memory database connection for testing
 async fn create_test_db() -> Connection {
     let db = Builder::new_local(":memory:").build().await.unwrap();
     db.connect().unwrap()
 }
 
-/// Create the users table
 async fn create_users_table(conn: &Connection) {
     conn.execute(
         "CREATE TABLE users (
@@ -74,7 +52,6 @@ async fn create_users_table(conn: &Connection) {
     .unwrap();
 }
 
-/// Create the posts table
 async fn create_posts_table(conn: &Connection) {
     conn.execute(
         "CREATE TABLE posts (
@@ -90,7 +67,6 @@ async fn create_posts_table(conn: &Connection) {
     .unwrap();
 }
 
-/// Create the products table
 async fn create_products_table(conn: &Connection) {
     conn.execute(
         "CREATE TABLE products (
@@ -106,7 +82,6 @@ async fn create_products_table(conn: &Connection) {
     .unwrap();
 }
 
-/// Insert sample users and return them
 async fn insert_sample_users(conn: &Connection) -> Vec<User> {
     let users_data = vec![
         ("Alice", "alice@example.com", Some(30i64)),
@@ -124,10 +99,9 @@ async fn insert_sample_users(conn: &Connection) -> Vec<User> {
             age: set(age),
             ..Default::default()
         };
-        // Use exec and then query back to avoid potential RETURNING issues
+
         Insert::<UserEntity>::new(model).exec(conn).await.unwrap();
 
-        // Query back the inserted user
         let user = Select::<UserEntity>::new()
             .filter(Condition::eq(UserColumn::Id, (idx + 1) as i64))
             .one(conn)
@@ -138,10 +112,6 @@ async fn insert_sample_users(conn: &Connection) -> Vec<User> {
     }
     users
 }
-
-// =============================================================================
-// Schema Tests
-// =============================================================================
 
 mod schema_tests {
     use tursorm::MigrationSchema;
@@ -155,7 +125,7 @@ mod schema_tests {
         assert!(sql.contains("id INTEGER PRIMARY KEY AUTOINCREMENT"));
         assert!(sql.contains("name TEXT NOT NULL"));
         assert!(sql.contains("email TEXT NOT NULL"));
-        assert!(sql.contains("age INTEGER")); // nullable, no NOT NULL
+        assert!(sql.contains("age INTEGER"));
     }
 
     #[tokio::test]
@@ -177,10 +147,8 @@ mod schema_tests {
     async fn test_schema_create_table() {
         let conn = create_test_db().await;
 
-        // Create table using Schema helper
         MigrationSchema::create_table::<UserEntity>(&conn, false).await.unwrap();
 
-        // Verify table exists by inserting a record
         let model = UserActiveModel {
             name: set("Test".to_string()),
             email: set("test@test.com".to_string()),
@@ -197,7 +165,6 @@ mod schema_tests {
         MigrationSchema::create_table::<UserEntity>(&conn, false).await.unwrap();
         MigrationSchema::drop_table::<UserEntity>(&conn, false).await.unwrap();
 
-        // Verify table is gone - inserting should fail
         let model = UserActiveModel {
             name: set("Test".to_string()),
             email: set("test@test.com".to_string()),
@@ -207,10 +174,6 @@ mod schema_tests {
         assert!(result.is_err());
     }
 }
-
-// =============================================================================
-// Insert Tests
-// =============================================================================
 
 mod insert_tests {
     use super::*;
@@ -246,7 +209,6 @@ mod insert_tests {
 
         assert_eq!(id, 1);
 
-        // Insert another and verify ID increments
         let model2 = UserActiveModel {
             name: set("Diana".to_string()),
             email: set("diana@example.com".to_string()),
@@ -283,7 +245,6 @@ mod insert_tests {
         let affected = insert.exec(&conn).await.unwrap();
         assert_eq!(affected, 3);
 
-        // Verify all were inserted
         let users = Select::<UserEntity>::new().all(&conn).await.unwrap();
         assert_eq!(users.len(), 3);
     }
@@ -310,10 +271,6 @@ mod insert_tests {
         assert_eq!(affected, 2);
     }
 }
-
-// =============================================================================
-// Select Tests
-// =============================================================================
 
 mod select_tests {
     use super::*;
@@ -385,7 +342,6 @@ mod select_tests {
 
         let users = Select::<UserEntity>::new().filter(Condition::gt(UserColumn::Age, 28)).all(&conn).await.unwrap();
 
-        // Alice (30), Diana (35)
         assert_eq!(users.len(), 2);
     }
 
@@ -397,7 +353,6 @@ mod select_tests {
 
         let users = Select::<UserEntity>::new().filter(Condition::gte(UserColumn::Age, 30)).all(&conn).await.unwrap();
 
-        // Alice (30), Diana (35)
         assert_eq!(users.len(), 2);
     }
 
@@ -409,7 +364,6 @@ mod select_tests {
 
         let users = Select::<UserEntity>::new().filter(Condition::lt(UserColumn::Age, 28)).all(&conn).await.unwrap();
 
-        // Bob (25)
         assert_eq!(users.len(), 1);
         assert_eq!(users[0].name, "Bob");
     }
@@ -438,7 +392,6 @@ mod select_tests {
         let users =
             Select::<UserEntity>::new().filter(Condition::contains(UserColumn::Name, "li")).all(&conn).await.unwrap();
 
-        // Alice, Charlie
         assert_eq!(users.len(), 2);
     }
 
@@ -451,7 +404,6 @@ mod select_tests {
         let users =
             Select::<UserEntity>::new().filter(Condition::starts_with(UserColumn::Name, "A")).all(&conn).await.unwrap();
 
-        // Alice
         assert_eq!(users.len(), 1);
         assert_eq!(users[0].name, "Alice");
     }
@@ -465,7 +417,6 @@ mod select_tests {
         let users =
             Select::<UserEntity>::new().filter(Condition::ends_with(UserColumn::Name, "e")).all(&conn).await.unwrap();
 
-        // Alice, Charlie, Eve
         assert_eq!(users.len(), 3);
     }
 
@@ -477,7 +428,6 @@ mod select_tests {
 
         let users = Select::<UserEntity>::new().filter(Condition::is_null(UserColumn::Age)).all(&conn).await.unwrap();
 
-        // Charlie has no age
         assert_eq!(users.len(), 1);
         assert_eq!(users[0].name, "Charlie");
     }
@@ -530,7 +480,6 @@ mod select_tests {
         let users =
             Select::<UserEntity>::new().filter(Condition::between(UserColumn::Age, 25, 30)).all(&conn).await.unwrap();
 
-        // Bob (25), Eve (28), Alice (30)
         assert_eq!(users.len(), 3);
     }
 
@@ -546,7 +495,6 @@ mod select_tests {
             .await
             .unwrap();
 
-        // Eve (28), Alice (30)
         assert_eq!(users.len(), 2);
     }
 
@@ -578,7 +526,6 @@ mod select_tests {
             .await
             .unwrap();
 
-        // Eve (28), Alice (30), Diana (35)
         assert_eq!(users.len(), 3);
     }
 
@@ -595,10 +542,10 @@ mod select_tests {
             .await
             .unwrap();
 
-        assert_eq!(users[0].name, "Bob"); // 25
-        assert_eq!(users[1].name, "Eve"); // 28
-        assert_eq!(users[2].name, "Alice"); // 30
-        assert_eq!(users[3].name, "Diana"); // 35
+        assert_eq!(users[0].name, "Bob");
+        assert_eq!(users[1].name, "Eve");
+        assert_eq!(users[2].name, "Alice");
+        assert_eq!(users[3].name, "Diana");
     }
 
     #[tokio::test]
@@ -630,16 +577,9 @@ mod select_tests {
         create_users_table(&conn).await;
         insert_sample_users(&conn).await;
 
-        // SQLite requires LIMIT with OFFSET, so we use a large limit
-        let users = Select::<UserEntity>::new()
-            .order_by_asc(UserColumn::Id)
-            .limit(1000) // Large limit to get all remaining
-            .offset(2)
-            .all(&conn)
-            .await
-            .unwrap();
+        let users =
+            Select::<UserEntity>::new().order_by_asc(UserColumn::Id).limit(1000).offset(2).all(&conn).await.unwrap();
 
-        // Skip Alice and Bob
         assert_eq!(users.len(), 3);
         assert_eq!(users[0].name, "Charlie");
     }
@@ -653,7 +593,6 @@ mod select_tests {
         let users =
             Select::<UserEntity>::new().order_by_asc(UserColumn::Id).limit(2).offset(1).all(&conn).await.unwrap();
 
-        // Skip Alice, get Bob and Charlie
         assert_eq!(users.len(), 2);
         assert_eq!(users[0].name, "Bob");
         assert_eq!(users[1].name, "Charlie");
@@ -697,18 +636,12 @@ mod select_tests {
         create_users_table(&conn).await;
         insert_sample_users(&conn).await;
 
-        // This tests the columns() method - note that FromRow still expects all columns
-        // in order, so this is mainly useful for raw queries
         let (sql, _) = Select::<UserEntity>::new().columns(vec![UserColumn::Id, UserColumn::Name]).build();
 
         assert!(sql.contains("SELECT id, name FROM"));
         assert!(!sql.contains("email"));
     }
 }
-
-// =============================================================================
-// Update Tests
-// =============================================================================
 
 mod update_tests {
     use super::*;
@@ -725,7 +658,6 @@ mod update_tests {
         let affected = Update::<UserEntity>::new(update_model).exec(&conn).await.unwrap();
         assert_eq!(affected, 1);
 
-        // Verify update
         let updated_user = Select::<UserEntity>::new()
             .filter(Condition::eq(UserColumn::Id, users[0].id))
             .one(&conn)
@@ -749,10 +681,8 @@ mod update_tests {
             .await
             .unwrap();
 
-        // Diana (35) should be updated
         assert_eq!(affected, 1);
 
-        // Verify
         let users = Select::<UserEntity>::new().filter(Condition::eq(UserColumn::Age, 99i64)).all(&conn).await.unwrap();
 
         assert_eq!(users.len(), 1);
@@ -790,7 +720,6 @@ mod update_tests {
         create_users_table(&conn).await;
         let users = insert_sample_users(&conn).await;
 
-        // Alice has age = 30
         let mut update_model = UserActiveModel::from(users[0].clone());
         update_model.age = set(None);
 
@@ -811,16 +740,11 @@ mod update_tests {
         let conn = create_test_db().await;
         create_users_table(&conn).await;
 
-        // Update with no columns set should error
         let result = Update::<UserEntity>::many().filter(Condition::eq(UserColumn::Id, 1)).exec(&conn).await;
 
         assert!(result.is_err());
     }
 }
-
-// =============================================================================
-// Delete Tests
-// =============================================================================
 
 mod delete_tests {
     use super::*;
@@ -835,7 +759,6 @@ mod delete_tests {
 
         assert_eq!(affected, 1);
 
-        // Verify deletion
         let count = Select::<UserEntity>::new().count(&conn).await.unwrap();
         assert_eq!(count, 4);
     }
@@ -846,11 +769,9 @@ mod delete_tests {
         create_users_table(&conn).await;
         insert_sample_users(&conn).await;
 
-        // Delete users with age > 30
         let affected =
             Delete::<UserEntity>::new().filter(Condition::gt(UserColumn::Age, 30)).exec(&conn).await.unwrap();
 
-        // Diana (35)
         assert_eq!(affected, 1);
     }
 
@@ -878,11 +799,9 @@ mod delete_tests {
         create_users_table(&conn).await;
         insert_sample_users(&conn).await;
 
-        // Delete users whose name ends with 'e'
         let affected =
             Delete::<UserEntity>::new().filter(Condition::like(UserColumn::Name, "%e")).exec(&conn).await.unwrap();
 
-        // Alice, Charlie, Eve
         assert_eq!(affected, 3);
     }
 
@@ -904,7 +823,6 @@ mod delete_tests {
         create_users_table(&conn).await;
         insert_sample_users(&conn).await;
 
-        // Delete without filter removes all
         let affected = Delete::<UserEntity>::new().exec(&conn).await.unwrap();
         assert_eq!(affected, 5);
 
@@ -912,10 +830,6 @@ mod delete_tests {
         assert_eq!(count, 0);
     }
 }
-
-// =============================================================================
-// Model Extension Tests
-// =============================================================================
 
 mod model_ext_tests {
 
@@ -957,13 +871,9 @@ mod model_ext_tests {
             .await
             .unwrap();
 
-        assert_eq!(users[0].name, "Diana"); // 35
+        assert_eq!(users[0].name, "Diana");
     }
 }
-
-// =============================================================================
-// Migration Tests
-// =============================================================================
 
 mod migration_tests {
     use tursorm::migration::EntitySchema;
@@ -977,13 +887,11 @@ mod migration_tests {
     async fn test_migrate_creates_new_table() {
         let conn = create_test_db().await;
 
-        // Table doesn't exist yet
         let diff = Migrator::migrate::<UserEntity>(&conn).await.unwrap();
 
         assert!(diff.has_changes);
         assert!(!diff.has_warnings);
 
-        // Verify table was created by inserting
         let model = UserActiveModel {
             name: set("Test".to_string()),
             email: set("test@test.com".to_string()),
@@ -997,10 +905,8 @@ mod migration_tests {
     async fn test_migrate_no_changes_for_existing_table() {
         let conn = create_test_db().await;
 
-        // First migration creates table
         Migrator::migrate::<UserEntity>(&conn).await.unwrap();
 
-        // Second migration should have no changes
         let diff = Migrator::migrate::<UserEntity>(&conn).await.unwrap();
 
         assert!(!diff.has_changes);
@@ -1015,10 +921,8 @@ mod migration_tests {
 
         let diff = Migrator::migrate_with_options::<UserEntity>(&conn, options).await.unwrap();
 
-        // Should report changes but not apply them
         assert!(diff.has_changes);
 
-        // Table should NOT exist
         let model = UserActiveModel {
             name: set("Test".to_string()),
             email: set("test@test.com".to_string()),
@@ -1038,7 +942,6 @@ mod migration_tests {
 
         assert!(diff.has_changes);
 
-        // Verify both tables were created
         let user_model = UserActiveModel {
             name: set("Test".to_string()),
             email: set("test@test.com".to_string()),
@@ -1068,7 +971,6 @@ mod migration_tests {
         assert_eq!(info.name, "users");
         assert_eq!(info.columns.len(), 4);
 
-        // Check column names
         let col_names: Vec<_> = info.columns.iter().map(|c| c.name.as_str()).collect();
         assert!(col_names.contains(&"id"));
         assert!(col_names.contains(&"name"));
@@ -1106,10 +1008,6 @@ mod migration_tests {
     }
 }
 
-// =============================================================================
-// Error Handling Tests
-// =============================================================================
-
 mod error_tests {
     use tursorm::Error;
 
@@ -1118,7 +1016,6 @@ mod error_tests {
     #[tokio::test]
     async fn test_insert_into_nonexistent_table() {
         let conn = create_test_db().await;
-        // Don't create table
 
         let model = UserActiveModel {
             name: set("Test".to_string()),
@@ -1143,14 +1040,12 @@ mod error_tests {
         let conn = create_test_db().await;
         create_users_table(&conn).await;
 
-        // ActiveModel without primary key set and no filter
         let model = UserActiveModel { name: set("Test".to_string()), ..Default::default() };
 
         let result = Update::<UserEntity>::new(model).exec(&conn).await;
         assert!(result.is_err());
 
         if let Err(Error::PrimaryKeyNotSet) = result {
-            // Expected
         } else {
             panic!("Expected PrimaryKeyNotSet error");
         }
@@ -1166,10 +1061,6 @@ mod error_tests {
     }
 }
 
-// =============================================================================
-// Complex Query Tests
-// =============================================================================
-
 mod complex_query_tests {
     use super::*;
 
@@ -1179,7 +1070,6 @@ mod complex_query_tests {
         create_users_table(&conn).await;
         insert_sample_users(&conn).await;
 
-        // Page 1 (first 2 users)
         let page1 =
             Select::<UserEntity>::new().order_by_asc(UserColumn::Id).limit(2).offset(0).all(&conn).await.unwrap();
 
@@ -1187,7 +1077,6 @@ mod complex_query_tests {
         assert_eq!(page1[0].name, "Alice");
         assert_eq!(page1[1].name, "Bob");
 
-        // Page 2 (next 2 users)
         let page2 =
             Select::<UserEntity>::new().order_by_asc(UserColumn::Id).limit(2).offset(2).all(&conn).await.unwrap();
 
@@ -1195,7 +1084,6 @@ mod complex_query_tests {
         assert_eq!(page2[0].name, "Charlie");
         assert_eq!(page2[1].name, "Diana");
 
-        // Page 3 (last user)
         let page3 =
             Select::<UserEntity>::new().order_by_asc(UserColumn::Id).limit(2).offset(4).all(&conn).await.unwrap();
 
@@ -1209,7 +1097,6 @@ mod complex_query_tests {
         create_users_table(&conn).await;
         insert_sample_users(&conn).await;
 
-        // Complex query: age not null AND (age >= 28 AND age <= 35) AND name doesn't start with 'D'
         let users = Select::<UserEntity>::new()
             .filter(Condition::is_not_null(UserColumn::Age))
             .filter(Condition::gte(UserColumn::Age, 28))
@@ -1220,7 +1107,6 @@ mod complex_query_tests {
             .await
             .unwrap();
 
-        // Eve (28), Alice (30) - Diana (35) excluded by NOT LIKE
         assert_eq!(users.len(), 2);
         assert_eq!(users[0].name, "Eve");
         assert_eq!(users[1].name, "Alice");
@@ -1233,7 +1119,6 @@ mod complex_query_tests {
         create_posts_table(&conn).await;
         let users = insert_sample_users(&conn).await;
 
-        // Create some posts for Alice
         for i in 1..=3 {
             let post = PostActiveModel {
                 user_id: set(users[0].id),
@@ -1245,7 +1130,6 @@ mod complex_query_tests {
             Insert::<PostEntity>::new(post).exec(&conn).await.unwrap();
         }
 
-        // Create posts for Bob
         for i in 1..=2 {
             let post = PostActiveModel {
                 user_id: set(users[1].id),
@@ -1257,7 +1141,6 @@ mod complex_query_tests {
             Insert::<PostEntity>::new(post).exec(&conn).await.unwrap();
         }
 
-        // Query Alice's posts
         let alice_posts = Select::<PostEntity>::new()
             .filter(Condition::eq(PostColumn::UserId, users[0].id))
             .all(&conn)
@@ -1266,7 +1149,6 @@ mod complex_query_tests {
 
         assert_eq!(alice_posts.len(), 3);
 
-        // Query published posts
         let published_posts =
             Select::<PostEntity>::new().filter(Condition::eq(PostColumn::Published, 1i64)).all(&conn).await.unwrap();
 
@@ -1279,7 +1161,6 @@ mod complex_query_tests {
         create_users_table(&conn).await;
         insert_sample_users(&conn).await;
 
-        // Update all users with age > 30 to set age = 100
         Update::<UserEntity>::many()
             .set(UserColumn::Age, 100i64)
             .filter(Condition::gt(UserColumn::Age, 30))
@@ -1287,7 +1168,6 @@ mod complex_query_tests {
             .await
             .unwrap();
 
-        // Verify
         let updated_users =
             Select::<UserEntity>::new().filter(Condition::eq(UserColumn::Age, 100i64)).all(&conn).await.unwrap();
 
@@ -1304,17 +1184,12 @@ mod complex_query_tests {
         let initial_count = Select::<UserEntity>::new().count(&conn).await.unwrap();
         assert_eq!(initial_count, 5);
 
-        // Delete users with null age
         Delete::<UserEntity>::new().filter(Condition::is_null(UserColumn::Age)).exec(&conn).await.unwrap();
 
         let after_delete_count = Select::<UserEntity>::new().count(&conn).await.unwrap();
         assert_eq!(after_delete_count, 4);
     }
 }
-
-// =============================================================================
-// Product Entity Tests (for unique constraints)
-// =============================================================================
 
 mod product_tests {
     use super::*;
@@ -1324,7 +1199,6 @@ mod product_tests {
         let conn = create_test_db().await;
         create_products_table(&conn).await;
 
-        // Insert
         let product = ProductActiveModel {
             name: set("Widget".to_string()),
             sku: set("WGT-001".to_string()),
@@ -1335,7 +1209,6 @@ mod product_tests {
 
         let id = Insert::<ProductEntity>::new(product).exec_with_last_insert_id(&conn).await.unwrap();
 
-        // Query back the inserted product
         let inserted = Select::<ProductEntity>::new()
             .filter(Condition::eq(ProductColumn::Id, id))
             .one(&conn)
@@ -1348,13 +1221,11 @@ mod product_tests {
         assert!((inserted.price - 19.99).abs() < 0.001);
         assert_eq!(inserted.quantity, 100);
 
-        // Update
         let mut update_model = ProductActiveModel::from(inserted.clone());
         update_model.quantity = set(50);
 
         Update::<ProductEntity>::new(update_model).exec(&conn).await.unwrap();
 
-        // Verify
         let updated = Select::<ProductEntity>::new()
             .filter(Condition::eq(ProductColumn::Id, inserted.id))
             .one(&conn)
@@ -1364,7 +1235,6 @@ mod product_tests {
 
         assert_eq!(updated.quantity, 50);
 
-        // Delete
         Delete::<ProductEntity>::new().filter(Condition::eq(ProductColumn::Id, inserted.id)).exec(&conn).await.unwrap();
 
         let deleted = Select::<ProductEntity>::new()
@@ -1381,7 +1251,6 @@ mod product_tests {
         let conn = create_test_db().await;
         create_products_table(&conn).await;
 
-        // Insert products with different prices
         let products =
             vec![("Cheap", "CHE-001", 5.99, 10), ("Medium", "MED-001", 29.99, 20), ("Expensive", "EXP-001", 99.99, 5)];
 
@@ -1396,13 +1265,11 @@ mod product_tests {
             Insert::<ProductEntity>::new(model).exec(&conn).await.unwrap();
         }
 
-        // Query products with price > 20
         let expensive =
             Select::<ProductEntity>::new().filter(Condition::gt(ProductColumn::Price, 20.0)).all(&conn).await.unwrap();
 
         assert_eq!(expensive.len(), 2);
 
-        // Query products between prices
         let mid_range = Select::<ProductEntity>::new()
             .filter(Condition::between(ProductColumn::Price, 10.0, 50.0))
             .all(&conn)

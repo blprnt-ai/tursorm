@@ -1,85 +1,33 @@
-//! Value types and conversions for tursorm
-
 pub use turso::Value;
 
 use crate::error::Error;
 use crate::error::Result;
 
-/// Column types supported by the ORM
-///
-/// These types map to SQLite's type affinity system:
-/// - `Integer` maps to INTEGER (64-bit signed)
-/// - `Float` maps to REAL (64-bit floating point)
-/// - `Text` maps to TEXT (UTF-8 string)
-/// - `Blob` maps to BLOB (binary data)
-/// - `Null` maps to NULL
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ColumnType {
-    /// 64-bit signed integer (SQLite INTEGER)
     Integer,
-    /// 64-bit floating point number (SQLite REAL)
+
     Float,
-    /// UTF-8 text string (SQLite TEXT)
+
     Text,
-    /// Binary data (SQLite BLOB)
+
     Blob,
-    /// Null value (SQLite NULL)
+
     Null,
 }
 
-/// Trait for converting Rust types into database values
-///
-/// This trait is implemented for common Rust types to allow them to be used
-/// as query parameters. Custom types can implement this trait to be used
-/// with the ORM.
-///
-/// # Example
-///
-/// ```ignore
-/// use tursorm::IntoValue;
-///
-/// let value: Value = 42i64.into_value();
-/// let text: Value = "hello".into_value();
-/// ```
 pub trait IntoValue {
-    /// Convert this value into a database [`Value`]
     fn into_value(self) -> Value;
 }
 
-/// Trait for converting database values into Rust types
-///
-/// This trait is implemented for common Rust types to allow them to be
-/// extracted from database query results. Custom types can implement this
-/// trait to be used with the ORM.
-///
-/// # Example
-///
-/// ```ignore
-/// use tursorm::{FromValue, Value};
-///
-/// let value = Value::Integer(42);
-/// let num: i64 = i64::from_value(value)?;
-/// ```
 pub trait FromValue: Sized {
-    /// Convert a database [`Value`] into this type
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the value cannot be converted to this type,
-    /// or if the value is null and this type is not nullable.
     fn from_value(value: Value) -> Result<Self>;
 
-    /// Convert from value, returning the default value for null
-    ///
-    /// This is useful for nullable columns where you want to use a default
-    /// value instead of `Option<T>`.
     fn from_value_opt(value: Value) -> Result<Self>
     where Self: Default {
         if matches!(value, Value::Null) { Ok(Self::default()) } else { Self::from_value(value) }
     }
 }
-
-// Implement IntoValue for common types
 
 impl IntoValue for i64 {
     fn into_value(self) -> Value {
@@ -197,8 +145,6 @@ impl IntoValue for Value {
         self
     }
 }
-
-// Implement FromValue for common types
 
 impl FromValue for i64 {
     fn from_value(value: Value) -> Result<Self> {
@@ -331,7 +277,6 @@ impl FromValue for Value {
     }
 }
 
-// Optional chrono support
 #[cfg(feature = "with-chrono")]
 mod chrono_impl {
     use chrono::DateTime;
@@ -408,7 +353,6 @@ mod chrono_impl {
     }
 }
 
-// Optional UUID support
 #[cfg(feature = "with-uuid")]
 mod uuid_impl {
     use uuid::Uuid;
@@ -438,7 +382,6 @@ mod uuid_impl {
     }
 }
 
-// Optional JSON support
 #[cfg(feature = "with-json")]
 pub use json_impl::Json;
 
@@ -450,7 +393,6 @@ mod json_impl {
 
     use super::*;
 
-    /// Wrapper type for JSON values
     #[derive(Clone, Debug, PartialEq)]
     pub struct Json<T>(pub T);
 
@@ -496,13 +438,9 @@ mod json_impl {
     }
 }
 
-// Optional array support (Vec<T> stored as JSON arrays)
 #[cfg(feature = "with-arrays")]
 mod arrays_impl {
     use super::*;
-
-    // Vec<T> implementations for common types (stored as JSON arrays)
-    // Note: Vec<u8> is not included here as it's implemented as Blob elsewhere
 
     impl IntoValue for Vec<String> {
         fn into_value(self) -> Value {
@@ -641,7 +579,6 @@ mod arrays_impl {
 mod tests {
     use super::*;
 
-    // ColumnType tests
     #[test]
     fn test_column_type_equality() {
         assert_eq!(ColumnType::Integer, ColumnType::Integer);
@@ -668,7 +605,6 @@ mod tests {
         assert_eq!(format!("{:?}", ColumnType::Null), "Null");
     }
 
-    // IntoValue tests for integer types
     #[test]
     fn test_i64_into_value() {
         let val: i64 = 42;
@@ -711,7 +647,6 @@ mod tests {
         assert_eq!(val.into_value(), Value::Integer(42));
     }
 
-    // IntoValue tests for float types
     #[test]
     fn test_f64_into_value() {
         let val: f64 = 3.14;
@@ -728,7 +663,6 @@ mod tests {
         }
     }
 
-    // IntoValue tests for string types
     #[test]
     fn test_string_into_value() {
         let val = String::from("hello");
@@ -741,7 +675,6 @@ mod tests {
         assert_eq!(val.into_value(), Value::Text("hello".to_string()));
     }
 
-    // IntoValue tests for blob types
     #[test]
     fn test_vec_u8_into_value() {
         let val: Vec<u8> = vec![1, 2, 3];
@@ -754,14 +687,12 @@ mod tests {
         assert_eq!(val.into_value(), Value::Blob(vec![1, 2, 3]));
     }
 
-    // IntoValue tests for bool
     #[test]
     fn test_bool_into_value() {
         assert_eq!(true.into_value(), Value::Integer(1));
         assert_eq!(false.into_value(), Value::Integer(0));
     }
 
-    // IntoValue tests for Option
     #[test]
     fn test_option_some_into_value() {
         let val: Option<i64> = Some(42);
@@ -774,14 +705,12 @@ mod tests {
         assert_eq!(val.into_value(), Value::Null);
     }
 
-    // IntoValue for Value (identity)
     #[test]
     fn test_value_into_value() {
         let val = Value::Integer(42);
         assert_eq!(val.clone().into_value(), val);
     }
 
-    // FromValue tests for integer types
     #[test]
     fn test_i64_from_value() {
         let val = Value::Integer(42);
@@ -842,7 +771,6 @@ mod tests {
         assert_eq!(u8::from_value(val).unwrap(), 42);
     }
 
-    // FromValue tests for float types
     #[test]
     fn test_f64_from_value() {
         let val = Value::Real(3.14);
@@ -867,7 +795,6 @@ mod tests {
         assert!((f32::from_value(val).unwrap() - 3.14).abs() < 0.01);
     }
 
-    // FromValue tests for String
     #[test]
     fn test_string_from_value() {
         let val = Value::Text("hello".to_string());
@@ -886,7 +813,6 @@ mod tests {
         assert!(String::from_value(val).is_err());
     }
 
-    // FromValue tests for Vec<u8>
     #[test]
     fn test_vec_u8_from_value() {
         let val = Value::Blob(vec![1, 2, 3]);
@@ -899,7 +825,6 @@ mod tests {
         assert!(Vec::<u8>::from_value(val).is_err());
     }
 
-    // FromValue tests for bool
     #[test]
     fn test_bool_from_value() {
         assert!(bool::from_value(Value::Integer(1)).unwrap());
@@ -913,7 +838,6 @@ mod tests {
         assert!(bool::from_value(val).is_err());
     }
 
-    // FromValue tests for Option
     #[test]
     fn test_option_from_value_some() {
         let val = Value::Integer(42);
@@ -926,14 +850,12 @@ mod tests {
         assert_eq!(Option::<i64>::from_value(val).unwrap(), None);
     }
 
-    // FromValue for Value (identity)
     #[test]
     fn test_value_from_value() {
         let val = Value::Integer(42);
         assert_eq!(Value::from_value(val.clone()).unwrap(), val);
     }
 
-    // from_value_opt tests
     #[test]
     fn test_from_value_opt_with_value() {
         let val = Value::Integer(42);
@@ -943,10 +865,9 @@ mod tests {
     #[test]
     fn test_from_value_opt_with_null() {
         let val = Value::Null;
-        assert_eq!(i64::from_value_opt(val).unwrap(), 0); // Default for i64
+        assert_eq!(i64::from_value_opt(val).unwrap(), 0);
     }
 
-    // Edge cases
     #[test]
     fn test_negative_integers() {
         let val: i64 = -42;
@@ -977,21 +898,17 @@ mod tests {
 
     #[test]
     fn test_special_float_values() {
-        // Test positive infinity
         let val = f64::INFINITY;
         assert_eq!(val.into_value(), Value::Real(f64::INFINITY));
 
-        // Test negative infinity
         let val = f64::NEG_INFINITY;
         assert_eq!(val.into_value(), Value::Real(f64::NEG_INFINITY));
     }
 
-    // Vec<T> tests (require with-arrays feature)
     #[cfg(feature = "with-arrays")]
     mod vec_tests {
         use super::*;
 
-        // Vec<String> tests
         #[test]
         fn test_vec_string_into_value() {
             let val = vec!["hello".to_string(), "world".to_string()];
@@ -1032,7 +949,6 @@ mod tests {
             assert!(Vec::<String>::from_value(val).is_err());
         }
 
-        // Vec<i64> tests
         #[test]
         fn test_vec_i64_into_value() {
             let val = vec![1i64, 2, 3, 4, 5];
@@ -1063,7 +979,6 @@ mod tests {
             assert_eq!(parsed, vec![-1i64, -2, -3]);
         }
 
-        // Vec<i32> tests
         #[test]
         fn test_vec_i32_into_value() {
             let val = vec![1i32, 2, 3];
@@ -1084,7 +999,6 @@ mod tests {
             assert!(Vec::<i32>::from_value(val).is_err());
         }
 
-        // Vec<f64> tests
         #[test]
         fn test_vec_f64_into_value() {
             let val = vec![1.5f64, 2.5, 3.5];
@@ -1105,7 +1019,6 @@ mod tests {
             assert!(Vec::<f64>::from_value(val).is_err());
         }
 
-        // Vec<f32> tests
         #[test]
         fn test_vec_f32_into_value() {
             let val = vec![1.5f32, 2.5, 3.5];
@@ -1126,7 +1039,6 @@ mod tests {
             assert!(Vec::<f32>::from_value(val).is_err());
         }
 
-        // Vec<bool> tests
         #[test]
         fn test_vec_bool_into_value() {
             let val = vec![true, false, true];
@@ -1157,7 +1069,6 @@ mod tests {
             assert!(parsed.is_empty());
         }
 
-        // Roundtrip tests
         #[test]
         fn test_vec_string_roundtrip() {
             let original = vec!["a".to_string(), "b".to_string(), "c".to_string()];
@@ -1182,7 +1093,6 @@ mod tests {
             assert_eq!(original, parsed);
         }
 
-        // Invalid JSON tests
         #[test]
         fn test_vec_string_from_invalid_json() {
             let val = Value::Text("not valid json".to_string());
@@ -1197,7 +1107,7 @@ mod tests {
 
         #[test]
         fn test_vec_bool_from_invalid_json() {
-            let val = Value::Text("[1, 0]".to_string()); // numbers, not bools
+            let val = Value::Text("[1, 0]".to_string());
             assert!(Vec::<bool>::from_value(val).is_err());
         }
     }

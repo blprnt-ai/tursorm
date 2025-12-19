@@ -1,36 +1,10 @@
-//! Database connection wrapper for tursorm
-
 use crate::ColumnTrait;
 use crate::EntityTrait;
 use crate::Result;
 
-/// Schema helper for creating and dropping tables
-///
-/// Provides static methods to generate DDL (Data Definition Language)
-/// SQL statements for entity tables.
-///
-/// # Example
-///
-/// ```ignore
-/// // Generate CREATE TABLE SQL
-/// let sql = Schema::create_table_sql::<UserEntity>(false);
-/// conn.execute(&sql, ()).await?;
-///
-/// // Or use the async helper
-/// Schema::create_table::<UserEntity>(&conn, true).await?;
-/// ```
 pub struct MigrationSchema;
 
 impl MigrationSchema {
-    /// Create a table for an entity
-    ///
-    /// This generates a CREATE TABLE statement based on the entity's column metadata.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// Schema::create_table::<UserEntity>(&conn, true).await?;
-    /// ```
     pub async fn create_table<E: EntityTrait>(conn: &crate::Connection, if_not_exists: bool) -> Result<()>
     where E::Column: 'static {
         let sql = Self::create_table_sql::<E>(if_not_exists);
@@ -38,7 +12,6 @@ impl MigrationSchema {
         Ok(())
     }
 
-    /// Generate the CREATE TABLE SQL statement for an entity
     pub fn create_table_sql<E: EntityTrait>(if_not_exists: bool) -> String
     where E::Column: 'static {
         let exists_clause = if if_not_exists { "IF NOT EXISTS " } else { "" };
@@ -49,27 +22,22 @@ impl MigrationSchema {
         for col in <E::Column as ColumnTrait>::all() {
             let mut def = format!("{} {}", col.name(), column_type_to_sql(col.column_type()));
 
-            // Handle PRIMARY KEY
             if col.is_primary_key() {
                 primary_keys.push(col.name().to_string());
 
-                // For single primary key with auto_increment, add inline
                 if col.is_auto_increment() {
                     def.push_str(" PRIMARY KEY AUTOINCREMENT");
                 }
             }
 
-            // Handle NOT NULL (non-nullable columns)
             if !col.is_nullable() && !col.is_primary_key() {
                 def.push_str(" NOT NULL");
             }
 
-            // Handle UNIQUE
             if col.is_unique() && !col.is_primary_key() {
                 def.push_str(" UNIQUE");
             }
 
-            // Handle DEFAULT
             if let Some(default) = col.default_value() {
                 def.push_str(&format!(" DEFAULT {}", default));
             }
@@ -77,7 +45,6 @@ impl MigrationSchema {
             column_defs.push(def);
         }
 
-        // Add composite primary key constraint if multiple primary keys or non-autoincrement single PK
         let needs_pk_constraint = primary_keys.len() > 1
             || (primary_keys.len() == 1
                 && !E::Column::all()
@@ -87,7 +54,6 @@ impl MigrationSchema {
                     .unwrap_or(false));
 
         if needs_pk_constraint && !primary_keys.is_empty() {
-            // Only add if we didn't already add inline PRIMARY KEY
             let has_inline_pk = E::Column::all().iter().any(|c| c.is_primary_key() && c.is_auto_increment());
 
             if !has_inline_pk {
@@ -98,20 +64,17 @@ impl MigrationSchema {
         format!("CREATE TABLE {}{} (\n  {}\n)", exists_clause, E::table_name(), column_defs.join(",\n  "))
     }
 
-    /// Drop a table
     pub async fn drop_table<E: EntityTrait>(conn: &crate::Connection, if_exists: bool) -> Result<()> {
         let sql = Self::drop_table_sql::<E>(if_exists);
         conn.execute(&sql, ()).await?;
         Ok(())
     }
 
-    /// Generate the DROP TABLE SQL statement
     pub fn drop_table_sql<E: EntityTrait>(if_exists: bool) -> String {
         let exists_clause = if if_exists { "IF EXISTS " } else { "" };
         format!("DROP TABLE {}{}", exists_clause, E::table_name())
     }
 
-    /// Check if a table exists
     pub async fn table_exists<E: EntityTrait>(conn: &crate::Connection) -> Result<bool> {
         let sql = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?";
 
@@ -129,7 +92,6 @@ impl MigrationSchema {
     }
 }
 
-/// Convert a ColumnType to its SQL representation
 fn column_type_to_sql(col_type: crate::value::ColumnType) -> &'static str {
     match col_type {
         crate::value::ColumnType::Integer => "INTEGER",
@@ -149,12 +111,10 @@ mod tests {
     use crate::Value;
     use crate::value::ColumnType;
 
-    // Test helpers
     fn column_type_to_sql_test(col_type: ColumnType) -> &'static str {
         column_type_to_sql(col_type)
     }
 
-    // column_type_to_sql tests
     #[test]
     fn test_column_type_to_sql_integer() {
         assert_eq!(column_type_to_sql_test(ColumnType::Integer), "INTEGER");
@@ -180,7 +140,6 @@ mod tests {
         assert_eq!(column_type_to_sql_test(ColumnType::Null), "NULL");
     }
 
-    // Mock Entity for Schema tests
     #[derive(Clone, Debug, PartialEq)]
     struct TestModel {
         id:    i64,
@@ -340,7 +299,6 @@ mod tests {
         }
     }
 
-    // Schema::create_table_sql tests
     #[test]
     fn test_schema_create_table_sql_basic() {
         let sql = MigrationSchema::create_table_sql::<TestEntity>(false);
@@ -366,7 +324,6 @@ mod tests {
         assert!(!sql.contains("IF NOT EXISTS"));
     }
 
-    // Schema::drop_table_sql tests
     #[test]
     fn test_schema_drop_table_sql_basic() {
         let sql = MigrationSchema::drop_table_sql::<TestEntity>(false);
@@ -381,14 +338,11 @@ mod tests {
         assert_eq!(sql, "DROP TABLE IF EXISTS test_users");
     }
 
-    // Test Schema struct creation
     #[test]
     fn test_schema_struct() {
-        // Schema is a unit struct, so we just verify it exists
         let _schema = MigrationSchema;
     }
 
-    // Entity with unique column test
     #[derive(Clone, Copy, Debug)]
     enum UniqueTestColumn {
         Id,
@@ -511,11 +465,9 @@ mod tests {
     fn test_schema_create_table_with_unique() {
         let sql = MigrationSchema::create_table_sql::<UniqueTestEntity>(false);
 
-        // email should be NOT NULL UNIQUE since it's not nullable
         assert!(sql.contains("email TEXT NOT NULL UNIQUE"));
     }
 
-    // Entity with default value test
     #[derive(Clone, Copy, Debug)]
     enum DefaultTestColumn {
         Id,
@@ -644,7 +596,6 @@ mod tests {
         assert!(sql.contains("status TEXT NOT NULL DEFAULT 'active'"));
     }
 
-    // Test composite primary key (non-autoincrement)
     #[derive(Clone, Copy, Debug)]
     enum CompositeColumn {
         UserId,
@@ -766,7 +717,6 @@ mod tests {
     fn test_schema_create_table_non_autoincrement_pk() {
         let sql = MigrationSchema::create_table_sql::<CompositeEntity>(false);
 
-        // Should have PRIMARY KEY constraint at the end, not inline AUTOINCREMENT
         assert!(sql.contains("PRIMARY KEY (user_id)"));
         assert!(!sql.contains("AUTOINCREMENT"));
     }

@@ -1,5 +1,3 @@
-//! DELETE query builder
-
 use std::marker::PhantomData;
 
 use crate::Condition;
@@ -7,26 +5,6 @@ use crate::EntityTrait;
 use crate::Result;
 use crate::Value;
 
-/// DELETE query builder for removing records from the database
-///
-/// Use this builder to delete records with optional filtering conditions.
-/// Without any filters, it will delete all records (use with caution!).
-///
-/// # Example
-///
-/// ```ignore
-/// // Delete by ID
-/// Delete::<UserEntity>::new()
-///     .filter(Condition::eq(UserColumn::Id, 1))
-///     .exec(&conn)
-///     .await?;
-///
-/// // Delete all inactive users
-/// Delete::<UserEntity>::new()
-///     .filter(Condition::eq(UserColumn::Status, "inactive"))
-///     .exec(&conn)
-///     .await?;
-/// ```
 #[derive(Clone, Debug)]
 pub struct Delete<E: EntityTrait> {
     conditions: Vec<Condition>,
@@ -34,23 +12,19 @@ pub struct Delete<E: EntityTrait> {
 }
 
 impl<E: EntityTrait> Delete<E> {
-    /// Create a new DELETE query
     pub fn new() -> Self {
         Self { conditions: Vec::new(), _entity: PhantomData }
     }
 
-    /// Add a filter condition
     pub fn filter(mut self, condition: Condition) -> Self {
         self.conditions.push(condition);
         self
     }
 
-    /// Build the SQL query and parameters
     pub fn build(&self) -> (String, Vec<Value>) {
         let mut sql = format!("DELETE FROM {}", E::table_name());
         let mut params = Vec::new();
 
-        // WHERE clause
         if !self.conditions.is_empty() {
             let where_parts: Vec<String> = self.conditions.iter().map(|c| format!("({})", c.sql())).collect();
             sql.push_str(" WHERE ");
@@ -64,15 +38,6 @@ impl<E: EntityTrait> Delete<E> {
         (sql, params)
     }
 
-    /// Execute the delete and return the number of rows affected
-    ///
-    /// # Warning
-    ///
-    /// If no filter conditions are set, this will delete ALL rows in the table!
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the query execution fails.
     pub async fn exec(self, conn: &crate::Connection) -> Result<u64> {
         let (sql, params) = self.build();
         let params: Vec<turso::Value> = params.into_iter().collect();
@@ -98,7 +63,6 @@ mod tests {
     use crate::ModelTrait;
     use crate::Value;
 
-    // Mock Entity and related types for testing
     #[derive(Clone, Debug, PartialEq)]
     struct TestModel {
         id:    i64,
@@ -227,7 +191,6 @@ mod tests {
         }
     }
 
-    // Delete::new tests
     #[test]
     fn test_delete_new() {
         let delete = Delete::<TestEntity>::new();
@@ -237,7 +200,6 @@ mod tests {
         assert!(params.is_empty());
     }
 
-    // Delete::default tests
     #[test]
     fn test_delete_default() {
         let delete = Delete::<TestEntity>::default();
@@ -247,7 +209,6 @@ mod tests {
         assert!(params.is_empty());
     }
 
-    // Delete::filter tests
     #[test]
     fn test_delete_filter_single() {
         let delete = Delete::<TestEntity>::new().filter(Condition::eq(TestColumn::Id, 1));
@@ -269,10 +230,9 @@ mod tests {
         assert!(sql.contains("(name = ?)"));
         assert!(sql.contains("AND"));
         assert!(sql.contains("(email IS NULL)"));
-        assert_eq!(params.len(), 1); // Only name has a parameter
+        assert_eq!(params.len(), 1);
     }
 
-    // Test with various conditions
     #[test]
     fn test_delete_with_gt_condition() {
         let delete = Delete::<TestEntity>::new().filter(Condition::gt(TestColumn::Id, 100));
@@ -346,7 +306,6 @@ mod tests {
         assert_eq!(params[1], Value::Integer(100));
     }
 
-    // Test with combined conditions
     #[test]
     fn test_delete_with_and_condition() {
         let combined =
@@ -377,7 +336,6 @@ mod tests {
         assert_eq!(params.len(), 1);
     }
 
-    // Test complex query
     #[test]
     fn test_delete_complex_query() {
         let delete = Delete::<TestEntity>::new()
@@ -390,10 +348,9 @@ mod tests {
         assert!(sql.contains("(id > ?)"));
         assert!(sql.contains("(email LIKE ?)"));
         assert!(sql.contains("(name IS NOT NULL)"));
-        assert_eq!(params.len(), 2); // id and email pattern
+        assert_eq!(params.len(), 2);
     }
 
-    // Clone tests
     #[test]
     fn test_delete_clone() {
         let delete = Delete::<TestEntity>::new().filter(Condition::eq(TestColumn::Id, 1));
@@ -406,7 +363,6 @@ mod tests {
         assert_eq!(params1, params2);
     }
 
-    // Debug tests
     #[test]
     fn test_delete_debug() {
         let delete = Delete::<TestEntity>::new().filter(Condition::eq(TestColumn::Id, 1));
@@ -415,7 +371,6 @@ mod tests {
         assert!(debug.contains("Delete"));
     }
 
-    // Test no WHERE clause (delete all)
     #[test]
     fn test_delete_all() {
         let delete = Delete::<TestEntity>::new();
@@ -426,7 +381,6 @@ mod tests {
         assert!(!sql.contains("WHERE"));
     }
 
-    // Test chained filters
     #[test]
     fn test_delete_chained_filters() {
         let delete = Delete::<TestEntity>::new()
@@ -435,12 +389,10 @@ mod tests {
             .filter(Condition::is_not_null(TestColumn::Email));
         let (sql, _) = delete.build();
 
-        // Verify all conditions are present
         let where_count = sql.matches("AND").count();
-        assert_eq!(where_count, 2); // 3 conditions means 2 ANDs
+        assert_eq!(where_count, 2);
     }
 
-    // Test with raw condition
     #[test]
     fn test_delete_with_raw_condition() {
         let delete = Delete::<TestEntity>::new()

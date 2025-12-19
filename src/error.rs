@@ -1,42 +1,30 @@
-//! Error types for tursorm
-
 use thiserror::Error;
 
-/// Result type alias for tursorm operations
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Error types that can occur in tursorm operations
 #[derive(Error, Debug)]
 pub enum Error {
-    /// Database error from turso
     #[error("Database error: {0}")]
     Database(#[from] turso::Error),
 
-    /// Type conversion error
     #[error("Type conversion error: expected {expected}, got {actual}")]
     TypeConversion { expected: &'static str, actual: String },
 
-    /// Null value error when a non-nullable field received null
     #[error("Unexpected null value for non-nullable field")]
     UnexpectedNull,
 
-    /// Column not found
     #[error("Column not found: {0}")]
     ColumnNotFound(String),
 
-    /// No rows affected when expected
     #[error("No rows affected")]
     NoRowsAffected,
 
-    /// Primary key not set for update operation
     #[error("Primary key must be set for update operation")]
     PrimaryKeyNotSet,
 
-    /// Query execution error
     #[error("Query error: {0}")]
     Query(String),
 
-    /// JSON serialization/deserialization error
     #[cfg(any(feature = "with-json", feature = "with-arrays"))]
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
@@ -101,7 +89,6 @@ mod tests {
 
     #[test]
     fn test_result_type_alias() {
-        // Test that Result type alias works correctly
         fn returns_ok() -> Result<i32> {
             Ok(42)
         }
@@ -117,7 +104,6 @@ mod tests {
 
     #[test]
     fn test_error_type_conversion_variants() {
-        // Test various type conversion error scenarios
         let err1 = Error::TypeConversion { expected: "Integer", actual: "Text".to_string() };
         let err2 = Error::TypeConversion { expected: "Real", actual: "Blob".to_string() };
 

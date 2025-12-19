@@ -1,5 +1,3 @@
-//! INSERT query builder
-
 use std::marker::PhantomData;
 
 use crate::ActiveModelTrait;
@@ -8,26 +6,6 @@ use crate::Error;
 use crate::Result;
 use crate::Value;
 
-/// INSERT query builder for adding new records to the database
-///
-/// Use this builder to insert one or more records. Supports returning the
-/// inserted row or the last insert ID.
-///
-/// # Example
-///
-/// ```ignore
-/// let new_user = UserActiveModel {
-///     name: set("Alice".to_string()),
-///     email: set("alice@example.com".to_string()),
-///     ..Default::default()
-/// };
-///
-/// // Insert and get row count
-/// let affected = Insert::<UserEntity>::new(new_user).exec(&conn).await?;
-///
-/// // Insert and get the inserted row back
-/// let user = Insert::<UserEntity>::new(new_user).exec_with_returning(&conn).await?;
-/// ```
 #[derive(Clone, Debug)]
 pub struct Insert<E: EntityTrait> {
     models:  Vec<E::ActiveModel>,
@@ -35,29 +13,24 @@ pub struct Insert<E: EntityTrait> {
 }
 
 impl<E: EntityTrait> Insert<E> {
-    /// Create a new INSERT query with a single model
     pub fn new(model: E::ActiveModel) -> Self {
         Self { models: vec![model], _entity: PhantomData }
     }
 
-    /// Create an empty INSERT query
     pub fn empty() -> Self {
         Self { models: Vec::new(), _entity: PhantomData }
     }
 
-    /// Add a model to insert
     pub fn add(mut self, model: E::ActiveModel) -> Self {
         self.models.push(model);
         self
     }
 
-    /// Add multiple models to insert
     pub fn add_many(mut self, models: impl IntoIterator<Item = E::ActiveModel>) -> Self {
         self.models.extend(models);
         self
     }
 
-    /// Build the SQL query and parameters for a single insert
     fn build_single(&self, model: &E::ActiveModel) -> (String, Vec<Value>) {
         let (columns, values) = model.get_insert_columns_and_values();
 
@@ -73,14 +46,6 @@ impl<E: EntityTrait> Insert<E> {
         (sql, values)
     }
 
-    /// Execute the insert and return the number of rows affected
-    ///
-    /// If multiple models were added, each is inserted individually and
-    /// the total affected count is returned.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any insert fails.
     pub async fn exec(self, conn: &crate::Connection) -> Result<u64> {
         if self.models.is_empty() {
             return Ok(0);
@@ -98,17 +63,6 @@ impl<E: EntityTrait> Insert<E> {
         Ok(total_affected)
     }
 
-    /// Execute the insert and return the last inserted ID
-    ///
-    /// Uses SQLite's `last_insert_rowid()` function to get the ID of
-    /// the inserted row. Useful when you need the ID but not the full row.
-    ///
-    /// Note: Only inserts the first model if multiple were added.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if no models were added, if the insert fails,
-    /// or if the ID cannot be retrieved.
     pub async fn exec_with_last_insert_id(self, conn: &crate::Connection) -> Result<i64> {
         if self.models.is_empty() {
             return Err(Error::Query("No models to insert".to_string()));
@@ -123,21 +77,6 @@ impl<E: EntityTrait> Insert<E> {
     }
 }
 
-/// Batch insert builder for inserting multiple records
-///
-/// Use this when you need to insert many records at once. Currently inserts
-/// records one by one, but provides a cleaner API for batch operations.
-///
-/// # Example
-///
-/// ```ignore
-/// let users = vec![
-///     UserActiveModel { name: set("Alice".to_string()), ..Default::default() },
-///     UserActiveModel { name: set("Bob".to_string()), ..Default::default() },
-/// ];
-///
-/// let affected = InsertMany::<UserEntity>::new(users).exec(&conn).await?;
-/// ```
 #[derive(Clone, Debug)]
 pub struct InsertMany<E: EntityTrait> {
     models:  Vec<E::ActiveModel>,
@@ -145,17 +84,10 @@ pub struct InsertMany<E: EntityTrait> {
 }
 
 impl<E: EntityTrait> InsertMany<E> {
-    /// Create a new batch insert
     pub fn new(models: Vec<E::ActiveModel>) -> Self {
         Self { models, _entity: PhantomData }
     }
 
-    /// Execute the batch insert and return the total rows affected
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any insert fails. Already-inserted records
-    /// are not rolled back unless using a transaction.
     pub async fn exec(self, conn: &crate::Connection) -> Result<u64> {
         if self.models.is_empty() {
             return Ok(0);
@@ -163,8 +95,6 @@ impl<E: EntityTrait> InsertMany<E> {
 
         let mut total_affected = 0u64;
 
-        // For now, insert one by one
-        // TODO: Use batch insert syntax for better performance
         for model in &self.models {
             let (columns, values) = model.get_insert_columns_and_values();
 
@@ -196,7 +126,6 @@ mod tests {
     use crate::ModelTrait;
     use crate::set;
 
-    // Mock Entity and related types for testing
     #[derive(Clone, Debug, PartialEq)]
     struct TestModel {
         id:    i64,
@@ -325,7 +254,6 @@ mod tests {
         }
     }
 
-    // Insert::new tests
     #[test]
     fn test_insert_new() {
         let model = TestActiveModel {
@@ -335,19 +263,16 @@ mod tests {
         };
         let insert = Insert::<TestEntity>::new(model);
 
-        // Verify insert was created with one model
         assert!(format!("{:?}", insert).contains("Insert"));
     }
 
-    // Insert::empty tests
     #[test]
     fn test_insert_empty() {
         let insert = Insert::<TestEntity>::empty();
-        // Debug should show empty models
+
         assert!(format!("{:?}", insert).contains("Insert"));
     }
 
-    // Insert::add tests
     #[test]
     fn test_insert_add() {
         let model1 = TestActiveModel {
@@ -365,7 +290,6 @@ mod tests {
         assert!(format!("{:?}", insert).contains("Insert"));
     }
 
-    // Insert::add_many tests
     #[test]
     fn test_insert_add_many() {
         let models = vec![
@@ -385,7 +309,6 @@ mod tests {
         assert!(format!("{:?}", insert).contains("Insert"));
     }
 
-    // Insert::build_single tests (indirectly tested)
     #[test]
     fn test_insert_build_with_values() {
         let model = TestActiveModel {
@@ -395,19 +318,16 @@ mod tests {
         };
         let insert = Insert::<TestEntity>::new(model);
 
-        // We can't call build_single directly as it's private, but we can verify the insert was created
         assert!(format!("{:?}", insert).contains("Alice"));
     }
 
     #[test]
     fn test_insert_with_empty_model() {
-        // When all fields are NotSet, should generate DEFAULT VALUES
         let model = TestActiveModel::default();
         let insert = Insert::<TestEntity>::new(model);
         assert!(format!("{:?}", insert).contains("Insert"));
     }
 
-    // Clone tests
     #[test]
     fn test_insert_clone() {
         let model = TestActiveModel {
@@ -421,7 +341,6 @@ mod tests {
         assert_eq!(format!("{:?}", insert), format!("{:?}", cloned));
     }
 
-    // Debug tests
     #[test]
     fn test_insert_debug() {
         let model = TestActiveModel { name: set("Test".to_string()), ..Default::default() };
@@ -431,7 +350,6 @@ mod tests {
         assert!(debug.contains("Insert"));
     }
 
-    // InsertMany tests
     #[test]
     fn test_insert_many_new() {
         let models = vec![
@@ -466,22 +384,16 @@ mod tests {
         assert_eq!(format!("{:?}", insert_many), format!("{:?}", cloned));
     }
 
-    // Test with partial fields set
     #[test]
     fn test_insert_partial_fields() {
-        let model = TestActiveModel {
-            name: set("Alice".to_string()),
-            // email is not set
-            ..Default::default()
-        };
+        let model = TestActiveModel { name: set("Alice".to_string()), ..Default::default() };
         let insert = Insert::<TestEntity>::new(model);
         let debug = format!("{:?}", insert);
         assert!(debug.contains("Alice"));
-        // The email field is NotSet, which should be shown as NotSet in debug output
+
         assert!(debug.contains("NotSet"));
     }
 
-    // Test chained operations
     #[test]
     fn test_insert_chained_add() {
         let insert = Insert::<TestEntity>::empty()

@@ -1,5 +1,3 @@
-//! Query builders for tursorm
-
 pub(crate) mod condition;
 pub(crate) mod delete;
 pub(crate) mod insert;

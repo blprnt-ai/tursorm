@@ -1,5 +1,3 @@
-//! UPDATE query builder
-
 use std::marker::PhantomData;
 
 use crate::ActiveModelTrait;
@@ -12,26 +10,6 @@ use crate::IntoValue;
 use crate::Result;
 use crate::Value;
 
-/// UPDATE query builder for modifying existing records
-///
-/// Use this builder to update records. Can update a single record by primary
-/// key using an active model, or update multiple records with conditions.
-///
-/// # Example
-///
-/// ```ignore
-/// // Update a single record using an active model
-/// let mut update = UserActiveModel::from(user);
-/// update.name = set("New Name".to_string());
-/// Update::<UserEntity>::new(update).exec(&conn).await?;
-///
-/// // Bulk update with conditions
-/// Update::<UserEntity>::many()
-///     .set(UserColumn::Status, "inactive")
-///     .filter(Condition::lt(UserColumn::LastLogin, "2020-01-01"))
-///     .exec(&conn)
-///     .await?;
-/// ```
 #[derive(Clone, Debug)]
 pub struct Update<E: EntityTrait> {
     model:      Option<E::ActiveModel>,
@@ -41,40 +19,28 @@ pub struct Update<E: EntityTrait> {
 }
 
 impl<E: EntityTrait> Update<E> {
-    /// Create a new UPDATE query with an active model
-    ///
-    /// The model's primary key will be used in the WHERE clause, and
-    /// all set fields will be updated.
     pub fn new(model: E::ActiveModel) -> Self {
         Self { model: Some(model), sets: Vec::new(), conditions: Vec::new(), _entity: PhantomData }
     }
 
-    /// Create an UPDATE query for bulk updates
-    ///
-    /// Use this with [`set`](Self::set) and [`filter`](Self::filter) to
-    /// update multiple rows matching certain conditions.
     pub fn many() -> Self {
         Self { model: None, sets: Vec::new(), conditions: Vec::new(), _entity: PhantomData }
     }
 
-    /// Set a column value
     pub fn set<C: ColumnTrait, V: IntoValue>(mut self, column: C, value: V) -> Self {
         self.sets.push((column.name().to_string(), value.into_value()));
         self
     }
 
-    /// Add a filter condition
     pub fn filter(mut self, condition: Condition) -> Self {
         self.conditions.push(condition);
         self
     }
 
-    /// Build the SQL query and parameters
     fn build(&self) -> Result<(String, Vec<Value>)> {
         let mut set_parts = Vec::new();
         let mut params = Vec::new();
 
-        // Get sets from model if provided
         if let Some(ref model) = self.model {
             let model_sets = model.get_update_sets();
             for (col, val) in model_sets {
@@ -83,7 +49,6 @@ impl<E: EntityTrait> Update<E> {
             }
         }
 
-        // Add explicit sets
         for (col, val) in &self.sets {
             set_parts.push(format!("{} = ?", col));
             params.push(val.clone());
@@ -95,10 +60,8 @@ impl<E: EntityTrait> Update<E> {
 
         let mut sql = format!("UPDATE {} SET {}", E::table_name(), set_parts.join(", "));
 
-        // Determine WHERE clause
         let mut where_conditions = self.conditions.clone();
 
-        // If we have a model, add primary key condition
         if let Some(ref model) = self.model {
             if let Some(pk_value) = model.get_primary_key_value() {
                 let pk_column = E::ActiveModel::primary_key_column();
@@ -108,7 +71,6 @@ impl<E: EntityTrait> Update<E> {
             }
         }
 
-        // WHERE clause
         if !where_conditions.is_empty() {
             let where_parts: Vec<String> = where_conditions.iter().map(|c| format!("({})", c.sql())).collect();
             sql.push_str(" WHERE ");
@@ -122,14 +84,6 @@ impl<E: EntityTrait> Update<E> {
         Ok((sql, params))
     }
 
-    /// Execute the update and return the number of rows affected
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - No columns are set to update
-    /// - The model has no primary key set (when using `new()` without filters)
-    /// - The query execution fails
     pub async fn exec(self, conn: &crate::Connection) -> Result<u64> {
         let (sql, params) = self.build()?;
         let params: Vec<turso::Value> = params.into_iter().collect();
@@ -137,17 +91,6 @@ impl<E: EntityTrait> Update<E> {
         Ok(affected)
     }
 
-    /// Execute the update and return the updated row
-    ///
-    /// Uses the SQL `RETURNING` clause to get the complete updated row back.
-    /// Useful when you need the row's current state after the update.
-    ///
-    /// Note: Only returns one row. If multiple rows are updated, only the
-    /// first one is returned.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if no rows were affected or if the query fails.
     pub async fn exec_with_returning(self, conn: &crate::Connection) -> Result<E::Model> {
         let (base_sql, params) = self.build()?;
         let sql = format!("{} RETURNING {}", base_sql, E::all_columns());
@@ -174,7 +117,6 @@ mod tests {
     use crate::ModelTrait;
     use crate::set;
 
-    // Mock Entity and related types for testing
     #[derive(Clone, Debug, PartialEq)]
     struct TestModel {
         id:    i64,
@@ -303,7 +245,6 @@ mod tests {
         }
     }
 
-    // Update::new tests
     #[test]
     fn test_update_new_with_model() {
         let model = TestActiveModel { id: set(1), name: set("Updated Name".to_string()), ..Default::default() };
@@ -316,10 +257,9 @@ mod tests {
         assert!(sql.contains("name = ?"));
         assert!(sql.contains("WHERE"));
         assert!(sql.contains("id = ?"));
-        assert_eq!(params.len(), 2); // name value + id value
+        assert_eq!(params.len(), 2);
     }
 
-    // Update::many tests
     #[test]
     fn test_update_many() {
         let update = Update::<TestEntity>::many()
@@ -334,7 +274,6 @@ mod tests {
         assert_eq!(params.len(), 1);
     }
 
-    // Update::set tests
     #[test]
     fn test_update_set() {
         let update = Update::<TestEntity>::many()
@@ -347,10 +286,9 @@ mod tests {
         let (sql, params) = result.unwrap();
         assert!(sql.contains("name = ?"));
         assert!(sql.contains("email = ?"));
-        assert_eq!(params.len(), 3); // name + email + id
+        assert_eq!(params.len(), 3);
     }
 
-    // Update::filter tests
     #[test]
     fn test_update_filter() {
         let update =
@@ -378,7 +316,6 @@ mod tests {
         assert!(sql.contains("(email IS NOT NULL)"));
     }
 
-    // Test build errors
     #[test]
     fn test_update_no_columns_error() {
         let update = Update::<TestEntity>::many().filter(Condition::eq(TestColumn::Id, 1));
@@ -389,11 +326,7 @@ mod tests {
 
     #[test]
     fn test_update_model_without_pk_error() {
-        let model = TestActiveModel {
-            name: set("Test".to_string()),
-            // id is not set
-            ..Default::default()
-        };
+        let model = TestActiveModel { name: set("Test".to_string()), ..Default::default() };
         let update = Update::<TestEntity>::new(model);
         let result = update.build();
 
@@ -402,27 +335,20 @@ mod tests {
 
     #[test]
     fn test_update_model_without_pk_but_with_filter() {
-        let model = TestActiveModel {
-            name: set("Test".to_string()),
-            // id is not set, but we have a filter
-            ..Default::default()
-        };
+        let model = TestActiveModel { name: set("Test".to_string()), ..Default::default() };
         let update = Update::<TestEntity>::new(model).filter(Condition::eq(TestColumn::Id, 1));
         let result = update.build();
 
-        // Should succeed because we have a filter condition
         assert!(result.is_ok());
     }
 
-    // Default tests
     #[test]
     fn test_update_default() {
         let update = Update::<TestEntity>::default();
-        // Default is same as many()
+
         assert!(format!("{:?}", update).contains("Update"));
     }
 
-    // Clone tests
     #[test]
     fn test_update_clone() {
         let update =
@@ -436,7 +362,6 @@ mod tests {
         assert_eq!(params1, params2);
     }
 
-    // Debug tests
     #[test]
     fn test_update_debug() {
         let update = Update::<TestEntity>::many().set(TestColumn::Name, "Test");
@@ -444,7 +369,6 @@ mod tests {
         assert!(debug.contains("Update"));
     }
 
-    // Test with model that has all fields set
     #[test]
     fn test_update_model_all_fields() {
         let model = TestActiveModel {
@@ -463,7 +387,6 @@ mod tests {
         assert_eq!(params.len(), 3);
     }
 
-    // Test combining model with additional sets
     #[test]
     fn test_update_model_with_additional_sets() {
         let model = TestActiveModel { id: set(1), name: set("Alice".to_string()), ..Default::default() };
@@ -477,7 +400,6 @@ mod tests {
         assert_eq!(params.len(), 3);
     }
 
-    // Test with complex conditions
     #[test]
     fn test_update_with_complex_condition() {
         let update = Update::<TestEntity>::many()
@@ -491,7 +413,6 @@ mod tests {
         assert!(sql.contains("AND"));
     }
 
-    // Test with IN condition
     #[test]
     fn test_update_with_in_condition() {
         let update = Update::<TestEntity>::many()
@@ -502,6 +423,6 @@ mod tests {
         assert!(result.is_ok());
         let (sql, params) = result.unwrap();
         assert!(sql.contains("id IN (?, ?, ?)"));
-        assert_eq!(params.len(), 4); // 1 for set + 3 for IN
+        assert_eq!(params.len(), 4);
     }
 }

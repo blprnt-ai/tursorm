@@ -1,30 +1,3 @@
-//! Implicit schema migration module
-//!
-//! This module provides automatic schema migration by comparing entity definitions
-//! with the actual database schema and applying necessary changes.
-//!
-//! # Example
-//!
-//! ```ignore
-//! use turso_orm::prelude::*;
-//! use turso_orm::migration::{Migrator, MigrationOptions};
-//!
-//! // Migrate a single entity
-//! Migrator::migrate::<UserEntity>(&conn).await?;
-//!
-//! // Migrate with options
-//! Migrator::migrate_with_options::<UserEntity>(&conn, MigrationOptions {
-//!     allow_drop_columns: false,
-//!     dry_run: true,
-//! }).await?;
-//!
-//! // Migrate multiple entities
-//! Migrator::migrate_all(&conn, &[
-//!     EntitySchema::of::<UserEntity>(),
-//!     EntitySchema::of::<PostEntity>(),
-//! ]).await?;
-//! ```
-
 mod schema;
 
 use std::collections::HashMap;
@@ -39,53 +12,46 @@ use crate::traits::column::ColumnTrait;
 use crate::traits::entity::EntityTrait;
 use crate::value::ColumnType;
 
-/// Information about a column in the database
 #[derive(Debug, Clone, PartialEq)]
 pub struct DbColumnInfo {
-    /// Column name
-    pub name:           String,
-    /// Column type as reported by SQLite
-    pub column_type:    String,
-    /// Whether the column can be NULL
-    pub nullable:       bool,
-    /// Default value (as SQL expression string)
-    pub default_value:  Option<String>,
-    /// Whether this is a primary key
+    pub name: String,
+
+    pub column_type: String,
+
+    pub nullable: bool,
+
+    pub default_value: Option<String>,
+
     pub is_primary_key: bool,
 }
 
-/// Information about a table in the database
 #[derive(Debug, Clone)]
 pub struct DbTableInfo {
-    /// Table name
-    pub name:         String,
-    /// Columns in the table
-    pub columns:      Vec<DbColumnInfo>,
-    /// Column names that are part of the primary key
+    pub name: String,
+
+    pub columns: Vec<DbColumnInfo>,
+
     pub primary_keys: Vec<String>,
 }
 
-/// Represents a schema change to be applied
 #[derive(Debug, Clone)]
 pub enum SchemaChange {
-    /// Create a new table
     CreateTable { table_name: String, sql: String },
-    /// Add a new column to an existing table
+
     AddColumn { table_name: String, column_name: String, sql: String },
-    /// Drop a column (requires SQLite 3.35.0+)
+
     DropColumn { table_name: String, column_name: String, sql: String },
-    /// Rename a column (requires SQLite 3.25.0+)
+
     RenameColumn { table_name: String, old_name: String, new_name: String, sql: String },
-    /// Recreate table to change column properties (for SQLite limitations)
+
     RecreateTable { table_name: String, reason: String, sql: Vec<String> },
-    /// Create an index
+
     CreateIndex { table_name: String, index_name: String, sql: String },
-    /// Warning about a detected issue that can't be auto-migrated
+
     Warning { table_name: String, message: String },
 }
 
 impl SchemaChange {
-    /// Get a description of this change
     pub fn description(&self) -> String {
         match self {
             SchemaChange::CreateTable { table_name, .. } => {
@@ -112,7 +78,6 @@ impl SchemaChange {
         }
     }
 
-    /// Get the SQL statements for this change
     pub fn sql_statements(&self) -> Vec<&str> {
         match self {
             SchemaChange::CreateTable { sql, .. } => vec![sql.as_str()],
@@ -126,24 +91,20 @@ impl SchemaChange {
     }
 }
 
-/// Result of a schema diff operation
 #[derive(Debug, Clone)]
 pub struct SchemaDiff {
-    /// Changes that need to be applied
-    pub changes:      Vec<SchemaChange>,
-    /// Whether there are any changes to apply
-    pub has_changes:  bool,
-    /// Whether there are any warnings
+    pub changes: Vec<SchemaChange>,
+
+    pub has_changes: bool,
+
     pub has_warnings: bool,
 }
 
 impl SchemaDiff {
-    /// Create an empty diff
     pub fn empty() -> Self {
         Self { changes: Vec::new(), has_changes: false, has_warnings: false }
     }
 
-    /// Add a change
     pub fn add_change(&mut self, change: SchemaChange) {
         if matches!(change, SchemaChange::Warning { .. }) {
             self.has_warnings = true;
@@ -153,12 +114,10 @@ impl SchemaDiff {
         self.changes.push(change);
     }
 
-    /// Get all SQL statements to apply
     pub fn all_sql(&self) -> Vec<&str> {
         self.changes.iter().flat_map(|c| c.sql_statements()).collect()
     }
 
-    /// Print a summary of changes
     pub fn summary(&self) -> String {
         let mut lines = Vec::new();
         for change in &self.changes {
@@ -168,18 +127,12 @@ impl SchemaDiff {
     }
 }
 
-/// Represents a foreign key change
-///
-/// Only create foreign key changes are supported on table creation..
-/// Dropping or modifying foreign keys is not supported.
 #[derive(Debug, Clone)]
 pub enum ForeignKeyChange {
-    /// Create a new foreign key
     CreateForeignKey { table_name: String, column_name: String, sql: String },
 }
 
 impl ForeignKeyChange {
-    /// Get a description of this change
     pub fn description(&self) -> String {
         match self {
             ForeignKeyChange::CreateForeignKey { table_name, column_name, .. } => {
@@ -188,7 +141,6 @@ impl ForeignKeyChange {
         }
     }
 
-    /// Get the SQL statements for this change
     pub fn sql_statements(&self) -> Vec<&str> {
         match self {
             ForeignKeyChange::CreateForeignKey { sql, .. } => vec![sql.as_str()],
@@ -196,38 +148,31 @@ impl ForeignKeyChange {
     }
 }
 
-/// Result of a foreign key diff operation
 #[derive(Debug, Clone)]
 pub struct ForeignKeyDiff {
-    /// Changes that need to be applied
-    pub changes:     Vec<ForeignKeyChange>,
-    /// Whether there are any changes to apply
+    pub changes: Vec<ForeignKeyChange>,
+
     pub has_changes: bool,
 }
 
 impl ForeignKeyDiff {
-    /// Create an empty diff
     pub fn empty() -> Self {
         Self { changes: Vec::new(), has_changes: false }
     }
 
-    /// Add a change
     pub fn add_change(&mut self, change: ForeignKeyChange) {
         self.has_changes = true;
         self.changes.push(change);
     }
 
-    /// Expand the changes with additional changes
     pub fn expand(&mut self, changes: Vec<ForeignKeyChange>) {
         self.changes.extend(changes);
     }
 
-    /// Get all SQL statements to apply
     pub fn all_sql(&self) -> Vec<&str> {
         self.changes.iter().flat_map(|c| c.sql_statements()).collect()
     }
 
-    /// Print a summary of changes
     pub fn summary(&self) -> String {
         if self.changes.is_empty() {
             "No changes needed".to_string()
@@ -237,20 +182,15 @@ impl ForeignKeyDiff {
     }
 }
 
-/// Options for controlling migration behavior
-///
-/// These options allow you to customize how migrations are applied,
-/// including whether to allow destructive operations like dropping columns.
 #[derive(Debug, Clone)]
 pub struct MigrationOptions {
-    /// Allow dropping columns that exist in DB but not in entity
     pub allow_drop_columns: bool,
-    /// Allow dropping tables that exist in DB but not in entities
-    pub allow_drop_tables:  bool,
-    /// Only calculate diff, don't apply changes
-    pub dry_run:            bool,
-    /// Print SQL statements before executing
-    pub verbose:            bool,
+
+    pub allow_drop_tables: bool,
+
+    pub dry_run: bool,
+
+    pub verbose: bool,
 }
 
 impl Default for MigrationOptions {
@@ -264,25 +204,11 @@ impl Default for MigrationOptions {
     }
 }
 
-/// Entity schema descriptor for runtime migration operations
-///
-/// This struct captures the schema definition from an entity type at runtime,
-/// allowing it to be compared with the actual database schema.
-///
-/// # Example
-///
-/// ```ignore
-/// let schema = EntitySchema::of::<UserEntity>();
-/// println!("Table: {}", schema.table_name());
-/// ```
 pub struct EntitySchema {
     table_name: &'static str,
     columns:    Vec<EntityColumnInfo>,
 }
 
-/// Information about an entity column for migration purposes
-///
-/// Contains all the metadata needed to generate and compare column definitions.
 #[derive(Debug, Clone)]
 pub struct EntityColumnInfo {
     pub name:              &'static str,
@@ -292,13 +218,12 @@ pub struct EntityColumnInfo {
     pub is_auto_increment: bool,
     pub is_unique:         bool,
     pub default_value:     Option<&'static str>,
-    /// Previous column name if this column was renamed (for migration renames)
-    pub renamed_from:      Option<&'static str>,
-    pub foreign_key:       Option<ForeignKeyInfo>,
+
+    pub renamed_from: Option<&'static str>,
+    pub foreign_key:  Option<ForeignKeyInfo>,
 }
 
 impl EntitySchema {
-    /// Create an EntitySchema from an entity type
     pub fn of<E: EntityTrait>() -> Self
     where E::Column: 'static {
         let columns = E::Column::all()
@@ -319,57 +244,23 @@ impl EntitySchema {
         Self { table_name: E::table_name(), columns }
     }
 
-    /// Get the table name
     pub fn table_name(&self) -> &'static str {
         self.table_name
     }
 
-    /// Get column info
     pub fn columns(&self) -> &[EntityColumnInfo] {
         &self.columns
     }
 }
 
-/// Schema migrator for automatic database migrations
-///
-/// The `Migrator` compares entity definitions with the actual database schema
-/// and applies necessary changes to bring the database in sync with the code.
-///
-/// # Supported Operations
-///
-/// - Create new tables
-/// - Add new columns (with sensible defaults for NOT NULL columns)
-/// - Create indexes for unique columns
-/// - Detect type mismatches and nullability changes (as warnings)
-///
-/// # Limitations
-///
-/// - Column drops require `allow_drop_columns` option
-/// - Some column modifications (like type changes) require table recreation
 pub struct Migrator;
 
 impl Migrator {
-    /// Migrate a single entity with default options
-    ///
-    /// This is the simplest way to migrate an entity. It will create the table
-    /// if it doesn't exist, or add any missing columns to an existing table.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the migration cannot be applied.
     pub async fn migrate<E: EntityTrait>(conn: &crate::Connection) -> Result<SchemaDiff>
     where E::Column: 'static {
         Self::migrate_with_options::<E>(conn, MigrationOptions::default()).await
     }
 
-    /// Migrate a single entity with custom options
-    ///
-    /// Use this when you need more control over the migration process,
-    /// such as enabling dry-run mode or allowing column drops.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the migration cannot be applied.
     pub async fn migrate_with_options<E: EntityTrait>(
         conn: &crate::Connection,
         options: MigrationOptions,
@@ -381,15 +272,10 @@ impl Migrator {
         Self::migrate_schema(conn, &schema, &options).await
     }
 
-    /// Migrate multiple entities at once
-    ///
-    /// Applies migrations for all provided entity schemas in order.
-    /// Changes from all entities are combined into a single `SchemaDiff`.
     pub async fn migrate_all(conn: &crate::Connection, schemas: &[EntitySchema]) -> Result<SchemaDiff> {
         Self::migrate_all_with_options(conn, schemas, MigrationOptions::default()).await
     }
 
-    /// Migrate multiple entities with custom options
     pub async fn migrate_all_with_options(
         conn: &crate::Connection,
         schemas: &[EntitySchema],
@@ -407,12 +293,7 @@ impl Migrator {
         Ok(combined_diff)
     }
 
-    /// Get the current database schema for a table
-    ///
-    /// Queries SQLite's `PRAGMA table_info` to retrieve column definitions.
-    /// Returns `None` if the table doesn't exist.
     pub async fn introspect_table(conn: &crate::Connection, table_name: &str) -> Result<Option<DbTableInfo>> {
-        // Check if table exists
         let exists_sql = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?";
         let mut rows = conn.query(exists_sql, [table_name]).await?;
 
@@ -427,7 +308,6 @@ impl Migrator {
             return Ok(None);
         }
 
-        // Get column info using PRAGMA
         let pragma_sql = format!("PRAGMA table_info({})", table_name);
         let mut rows = conn.query(&pragma_sql, ()).await?;
 
@@ -435,7 +315,6 @@ impl Migrator {
         let mut primary_keys = Vec::new();
 
         while let Some(row) = rows.next().await? {
-            // PRAGMA table_info returns: cid, name, type, notnull, dflt_value, pk
             let name = match row.get_value(1)? {
                 turso::Value::Text(s) => s,
                 _ => continue,
@@ -478,14 +357,12 @@ impl Migrator {
         Ok(Some(DbTableInfo { name: table_name.to_string(), columns, primary_keys }))
     }
 
-    /// Calculate the diff between entity schema and database schema
     pub async fn diff<E: EntityTrait>(conn: &crate::Connection) -> Result<SchemaDiff>
     where E::Column: 'static {
         let schema = EntitySchema::of::<E>();
         Self::diff_schema(conn, &schema, &MigrationOptions::default()).await
     }
 
-    /// Calculate diff for a schema
     async fn diff_schema(
         conn: &crate::Connection,
         entity_schema: &EntitySchema,
@@ -494,33 +371,26 @@ impl Migrator {
         let mut diff = SchemaDiff::empty();
         let table_name = entity_schema.table_name();
 
-        // Get current database schema
         let db_table = Self::introspect_table(conn, table_name).await?;
 
         match db_table {
             None => {
-                // Table doesn't exist - create it
                 let sql = Self::generate_create_table_sql(entity_schema);
                 diff.add_change(SchemaChange::CreateTable { table_name: table_name.to_string(), sql });
             }
             Some(db_info) => {
-                // Table exists - compare columns
                 let db_columns: HashMap<&str, &DbColumnInfo> =
                     db_info.columns.iter().map(|c| (c.name.as_str(), c)).collect();
 
                 let entity_columns: HashMap<&str, &EntityColumnInfo> =
                     entity_schema.columns.iter().map(|c| (c.name, c)).collect();
 
-                // Track columns that are being renamed (old names that shouldn't be dropped)
                 let mut renamed_old_columns: std::collections::HashSet<&str> = std::collections::HashSet::new();
 
-                // Find columns to add or rename (in entity but not in DB)
                 for entity_col in &entity_schema.columns {
                     if !db_columns.contains_key(entity_col.name) {
-                        // Column doesn't exist in DB - check if it's a rename
                         if let Some(old_name) = entity_col.renamed_from {
                             if db_columns.contains_key(old_name) {
-                                // Old column exists - this is a rename
                                 let sql = format!(
                                     "ALTER TABLE {} RENAME COLUMN {} TO {}",
                                     table_name, old_name, entity_col.name
@@ -533,7 +403,6 @@ impl Migrator {
                                 });
                                 renamed_old_columns.insert(old_name);
                             } else {
-                                // Old column doesn't exist either - just add the new column
                                 let sql = Self::generate_add_column_sql(table_name, entity_col);
                                 diff.add_change(SchemaChange::AddColumn {
                                     table_name: table_name.to_string(),
@@ -542,7 +411,6 @@ impl Migrator {
                                 });
                             }
                         } else {
-                            // No rename - just add the new column
                             let sql = Self::generate_add_column_sql(table_name, entity_col);
                             diff.add_change(SchemaChange::AddColumn {
                                 table_name: table_name.to_string(),
@@ -551,7 +419,6 @@ impl Migrator {
                             });
                         }
                     } else {
-                        // Column exists - check for type mismatches
                         let db_col = db_columns[entity_col.name];
                         if let Some(warning) = Self::check_column_compatibility(entity_col, db_col) {
                             diff.add_change(SchemaChange::Warning {
@@ -567,7 +434,6 @@ impl Migrator {
                         && !renamed_old_columns.contains(db_col.name.as_str())
                     {
                         if options.allow_drop_columns {
-                            // Find columns to drop (in DB but not in entity, and not being renamed)
                             let sql = format!("ALTER TABLE {} DROP COLUMN {}", table_name, db_col.name);
                             diff.add_change(SchemaChange::DropColumn {
                                 table_name: table_name.to_string(),
@@ -575,7 +441,6 @@ impl Migrator {
                                 sql,
                             });
                         } else {
-                            // Warn about extra columns (but not ones being renamed)
                             diff.add_change(SchemaChange::Warning {
                                 table_name: table_name.to_string(),
                                 message:    format!(
@@ -587,12 +452,9 @@ impl Migrator {
                     }
                 }
 
-                // MVCC does not support indexes, so we skip this for MVCC databases
                 if !conn.is_mvcc_enabled() {
-                    // Check for unique constraints that need to be added
                     for entity_col in &entity_schema.columns {
                         if entity_col.is_unique && !entity_col.is_primary_key {
-                            // Check if unique index exists
                             let index_name = format!("idx_{}_{}_unique", table_name, entity_col.name);
                             let has_index = Self::index_exists(conn, &index_name).await?;
 
@@ -616,7 +478,6 @@ impl Migrator {
         Ok(diff)
     }
 
-    /// Migrate schema
     async fn migrate_schema(
         conn: &crate::Connection,
         entity_schema: &EntitySchema,
@@ -628,10 +489,8 @@ impl Migrator {
             return Ok(diff);
         }
 
-        // Turn off foreign key constraints
         conn.execute("PRAGMA foreign_keys = OFF", ()).await?;
 
-        // Apply changes
         for change in &diff.changes {
             if options.verbose {
                 eprintln!("Migration: {}", change.description());
@@ -645,13 +504,11 @@ impl Migrator {
             }
         }
 
-        // Turn on foreign key constraints
         conn.execute("PRAGMA foreign_keys = ON", ()).await?;
 
         Ok(diff)
     }
 
-    /// Check if an index exists
     async fn index_exists(conn: &crate::Connection, index_name: &str) -> Result<bool> {
         let sql = "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?";
         let mut rows = conn.query(sql, [index_name]).await?;
@@ -664,7 +521,6 @@ impl Migrator {
         }
     }
 
-    /// Generate CREATE TABLE SQL from entity schema
     fn generate_create_table_sql(schema: &EntitySchema) -> String {
         let mut column_defs = Vec::new();
         let mut primary_keys = Vec::new();
@@ -694,7 +550,6 @@ impl Migrator {
             column_defs.push(def);
         }
 
-        // Add composite primary key if needed
         let has_inline_pk = schema.columns.iter().any(|c| c.is_primary_key && c.is_auto_increment);
 
         if !has_inline_pk && !primary_keys.is_empty() {
@@ -706,7 +561,6 @@ impl Migrator {
         format!("CREATE TABLE {} ({})", schema.table_name, column_defs.join(", "))
     }
 
-    /// Generate CREATE FOREIGN KEY SQL from entity schema
     fn generate_create_foreign_key_changes(schema: &EntitySchema) -> Vec<String> {
         schema
             .columns
@@ -716,7 +570,6 @@ impl Migrator {
             .collect()
     }
 
-    /// Generate CREATE FOREIGN KEY SQL from entity column
     fn generate_create_foreign_key_sql_from_column(col: &EntityColumnInfo) -> String {
         let foreign_key_info = col.foreign_key.as_ref().unwrap();
         let base_sql = format!("FOREIGN KEY ({}) REFERENCES {}", col.name, foreign_key_info.table_name);
@@ -740,17 +593,14 @@ impl Migrator {
         format!("{} {} {}", base_sql, on_delete, on_update)
     }
 
-    /// Generate ALTER TABLE ADD COLUMN SQL
     fn generate_add_column_sql(table_name: &str, col: &EntityColumnInfo) -> String {
         let mut def =
             format!("ALTER TABLE {} ADD COLUMN {} {}", table_name, col.name, column_type_to_sql(col.column_type));
 
-        // SQLite requires DEFAULT for NOT NULL columns when adding
         if !col.nullable {
             if let Some(default) = col.default_value {
                 def.push_str(&format!(" NOT NULL DEFAULT {}", default));
             } else {
-                // Provide a sensible default based on type
                 let default = match col.column_type {
                     ColumnType::Integer => "0",
                     ColumnType::Float => "0.0",
@@ -767,12 +617,10 @@ impl Migrator {
         def
     }
 
-    /// Check if entity column is compatible with DB column
     fn check_column_compatibility(entity_col: &EntityColumnInfo, db_col: &DbColumnInfo) -> Option<String> {
         let entity_type = column_type_to_sql(entity_col.column_type).to_uppercase();
         let db_type = db_col.column_type.to_uppercase();
 
-        // SQLite is flexible with types, but warn about major mismatches
         let type_compatible = match (entity_type.as_str(), db_type.as_str()) {
             ("INTEGER", "INTEGER") => true,
             ("INTEGER", "INT") => true,
@@ -793,7 +641,6 @@ impl Migrator {
             ));
         }
 
-        // Check nullability
         if entity_col.nullable != db_col.nullable && !entity_col.is_primary_key {
             return Some(format!(
                 "Column '{}' nullability mismatch: entity is {}, database is {}",
@@ -807,7 +654,6 @@ impl Migrator {
     }
 }
 
-/// Convert a ColumnType to its SQL representation
 fn column_type_to_sql(col_type: ColumnType) -> &'static str {
     match col_type {
         ColumnType::Integer => "INTEGER",
@@ -822,7 +668,6 @@ fn column_type_to_sql(col_type: ColumnType) -> &'static str {
 mod tests {
     use super::*;
 
-    // SchemaChange tests
     #[test]
     fn test_schema_change_description_create_table() {
         let change = SchemaChange::CreateTable {
@@ -879,7 +724,6 @@ mod tests {
         assert_eq!(change.description(), "Warning for 'users': Column type mismatch");
     }
 
-    // SchemaChange::sql_statements tests
     #[test]
     fn test_schema_change_sql_create_table() {
         let change = SchemaChange::CreateTable {
@@ -926,7 +770,6 @@ mod tests {
         assert!(stmts.is_empty());
     }
 
-    // DbColumnInfo tests
     #[test]
     fn test_db_column_info_equality() {
         let col1 = DbColumnInfo {
@@ -955,7 +798,6 @@ mod tests {
         assert!(debug.contains("is_primary_key: true"));
     }
 
-    // DbTableInfo tests
     #[test]
     fn test_db_table_info_clone() {
         let table = DbTableInfo {
@@ -974,7 +816,6 @@ mod tests {
         assert_eq!(cloned.columns.len(), 1);
     }
 
-    // SchemaDiff tests
     #[test]
     fn test_schema_diff_empty() {
         let diff = SchemaDiff::empty();
@@ -1060,10 +901,9 @@ mod tests {
         let summary = diff.summary();
         assert!(summary.contains("Create table 'users'"));
         assert!(summary.contains("Add column 'email'"));
-        assert!(summary.contains("\n")); // Multiple lines
+        assert!(summary.contains("\n"));
     }
 
-    // MigrationOptions tests
     #[test]
     fn test_migration_options_default() {
         let opts = MigrationOptions::default();
@@ -1096,7 +936,6 @@ mod tests {
         assert!(debug.contains("allow_drop_columns"));
     }
 
-    // EntityColumnInfo tests
     #[test]
     fn test_entity_column_info_clone() {
         let col = EntityColumnInfo {
@@ -1133,7 +972,6 @@ mod tests {
         assert!(debug.contains("is_unique: true"));
     }
 
-    // column_type_to_sql tests
     #[test]
     fn test_column_type_to_sql() {
         assert_eq!(column_type_to_sql(ColumnType::Integer), "INTEGER");
@@ -1143,7 +981,6 @@ mod tests {
         assert_eq!(column_type_to_sql(ColumnType::Null), "NULL");
     }
 
-    // Migrator::generate_create_table_sql tests
     #[test]
     fn test_generate_create_table_sql_basic() {
         let schema = EntitySchema {
@@ -1292,7 +1129,7 @@ mod tests {
                 column_type:       ColumnType::Integer,
                 nullable:          false,
                 is_primary_key:    true,
-                is_auto_increment: false, // Not auto-increment
+                is_auto_increment: false,
                 is_unique:         false,
                 default_value:     None,
                 renamed_from:      None,
@@ -1305,7 +1142,6 @@ mod tests {
         assert!(!sql.contains("AUTOINCREMENT"));
     }
 
-    // Migrator::generate_add_column_sql tests
     #[test]
     fn test_generate_add_column_sql_not_null_with_default() {
         let col = EntityColumnInfo {
@@ -1339,7 +1175,7 @@ mod tests {
         };
 
         let sql = Migrator::generate_add_column_sql("users", &col);
-        // Should provide a sensible default for NOT NULL columns
+
         assert!(sql.contains("ALTER TABLE users ADD COLUMN name TEXT NOT NULL DEFAULT ''"));
     }
 
@@ -1416,7 +1252,6 @@ mod tests {
         assert!(sql.contains("DEFAULT X''"));
     }
 
-    // Migrator::check_column_compatibility tests
     #[test]
     fn test_check_column_compatibility_same_type() {
         let entity_col = EntityColumnInfo {
@@ -1496,7 +1331,6 @@ mod tests {
 
     #[test]
     fn test_check_column_compatibility_compatible_types() {
-        // INT should be compatible with INTEGER
         let entity_col = EntityColumnInfo {
             name:              "id",
             column_type:       ColumnType::Integer,
@@ -1522,7 +1356,6 @@ mod tests {
 
     #[test]
     fn test_check_column_compatibility_varchar() {
-        // VARCHAR should be compatible with TEXT
         let entity_col = EntityColumnInfo {
             name:              "name",
             column_type:       ColumnType::Text,
@@ -1546,7 +1379,6 @@ mod tests {
         assert!(result.is_none());
     }
 
-    // EntitySchema tests
     #[test]
     fn test_entity_schema_table_name() {
         let schema = EntitySchema { table_name: "my_table", columns: vec![] };
@@ -1588,7 +1420,6 @@ mod tests {
         assert_eq!(schema.columns()[1].name, "name");
     }
 
-    // SchemaChange::RenameColumn tests
     #[test]
     fn test_schema_change_description_rename_column() {
         let change = SchemaChange::RenameColumn {

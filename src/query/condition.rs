@@ -1,27 +1,7 @@
-//! Query conditions for WHERE clauses
-
 use crate::ColumnTrait;
 use crate::IntoValue;
 use crate::Value;
 
-/// A condition for filtering queries (WHERE clauses)
-///
-/// Conditions are used to filter query results. They can be created using
-/// static methods like [`Condition::eq`], [`Condition::gt`], etc., and
-/// combined using [`Condition::and`] and [`Condition::or`].
-///
-/// # Example
-///
-/// ```ignore
-/// use tursorm::Condition;
-///
-/// // Simple equality
-/// let cond = Condition::eq(UserColumn::Id, 1);
-///
-/// // Combined conditions
-/// let cond = Condition::eq(UserColumn::Status, "active")
-///     .and(Condition::gt(UserColumn::Age, 18));
-/// ```
 #[derive(Clone, Debug)]
 pub struct Condition {
     pub(crate) sql:    String,
@@ -29,72 +9,58 @@ pub struct Condition {
 }
 
 impl Condition {
-    /// Create an equality condition: column = value
     pub fn eq<C: ColumnTrait, V: IntoValue>(column: C, value: V) -> Self {
         Self { sql: format!("{} = ?", column.name()), values: vec![value.into_value()] }
     }
 
-    /// Create a not-equal condition: column != value
     pub fn ne<C: ColumnTrait, V: IntoValue>(column: C, value: V) -> Self {
         Self { sql: format!("{} != ?", column.name()), values: vec![value.into_value()] }
     }
 
-    /// Create a greater-than condition: column > value
     pub fn gt<C: ColumnTrait, V: IntoValue>(column: C, value: V) -> Self {
         Self { sql: format!("{} > ?", column.name()), values: vec![value.into_value()] }
     }
 
-    /// Create a greater-than-or-equal condition: column >= value
     pub fn gte<C: ColumnTrait, V: IntoValue>(column: C, value: V) -> Self {
         Self { sql: format!("{} >= ?", column.name()), values: vec![value.into_value()] }
     }
 
-    /// Create a less-than condition: column < value
     pub fn lt<C: ColumnTrait, V: IntoValue>(column: C, value: V) -> Self {
         Self { sql: format!("{} < ?", column.name()), values: vec![value.into_value()] }
     }
 
-    /// Create a less-than-or-equal condition: column <= value
     pub fn lte<C: ColumnTrait, V: IntoValue>(column: C, value: V) -> Self {
         Self { sql: format!("{} <= ?", column.name()), values: vec![value.into_value()] }
     }
 
-    /// Create a LIKE condition: column LIKE pattern
     pub fn like<C: ColumnTrait>(column: C, pattern: impl Into<String>) -> Self {
         Self { sql: format!("{} LIKE ?", column.name()), values: vec![Value::Text(pattern.into())] }
     }
 
-    /// Create a NOT LIKE condition: column NOT LIKE pattern
     pub fn not_like<C: ColumnTrait>(column: C, pattern: impl Into<String>) -> Self {
         Self { sql: format!("{} NOT LIKE ?", column.name()), values: vec![Value::Text(pattern.into())] }
     }
 
-    /// Create a contains condition (LIKE %value%)
     pub fn contains<C: ColumnTrait>(column: C, value: impl Into<String>) -> Self {
         Self { sql: format!("{} LIKE ?", column.name()), values: vec![Value::Text(format!("%{}%", value.into()))] }
     }
 
-    /// Create a starts-with condition (LIKE value%)
     pub fn starts_with<C: ColumnTrait>(column: C, value: impl Into<String>) -> Self {
         Self { sql: format!("{} LIKE ?", column.name()), values: vec![Value::Text(format!("{}%", value.into()))] }
     }
 
-    /// Create an ends-with condition (LIKE %value)
     pub fn ends_with<C: ColumnTrait>(column: C, value: impl Into<String>) -> Self {
         Self { sql: format!("{} LIKE ?", column.name()), values: vec![Value::Text(format!("%{}", value.into()))] }
     }
 
-    /// Create an IS NULL condition
     pub fn is_null<C: ColumnTrait>(column: C) -> Self {
         Self { sql: format!("{} IS NULL", column.name()), values: vec![] }
     }
 
-    /// Create an IS NOT NULL condition
     pub fn is_not_null<C: ColumnTrait>(column: C) -> Self {
         Self { sql: format!("{} IS NOT NULL", column.name()), values: vec![] }
     }
 
-    /// Create an IN condition: column IN (values...)
     pub fn is_in<C: ColumnTrait, V: IntoValue>(column: C, values: Vec<V>) -> Self {
         let placeholders: Vec<&str> = values.iter().map(|_| "?").collect();
         Self {
@@ -103,7 +69,6 @@ impl Condition {
         }
     }
 
-    /// Create a NOT IN condition: column NOT IN (values...)
     pub fn not_in<C: ColumnTrait, V: IntoValue>(column: C, values: Vec<V>) -> Self {
         let placeholders: Vec<&str> = values.iter().map(|_| "?").collect();
         Self {
@@ -112,12 +77,10 @@ impl Condition {
         }
     }
 
-    /// Create a BETWEEN condition: column BETWEEN low AND high
     pub fn between<C: ColumnTrait, V: IntoValue>(column: C, low: V, high: V) -> Self {
         Self { sql: format!("{} BETWEEN ? AND ?", column.name()), values: vec![low.into_value(), high.into_value()] }
     }
 
-    /// Create a NOT BETWEEN condition: column NOT BETWEEN low AND high
     pub fn not_between<C: ColumnTrait, V: IntoValue>(column: C, low: V, high: V) -> Self {
         Self {
             sql:    format!("{} NOT BETWEEN ? AND ?", column.name()),
@@ -125,54 +88,43 @@ impl Condition {
         }
     }
 
-    /// Create a raw SQL condition with values
     pub fn raw(sql: impl Into<String>, values: Vec<Value>) -> Self {
         Self { sql: sql.into(), values }
     }
 
-    /// Combine two conditions with AND
     pub fn and(self, other: Condition) -> Self {
         let mut values = self.values;
         values.extend(other.values);
         Self { sql: format!("({}) AND ({})", self.sql, other.sql), values }
     }
 
-    /// Combine two conditions with OR
     pub fn or(self, other: Condition) -> Self {
         let mut values = self.values;
         values.extend(other.values);
         Self { sql: format!("({}) OR ({})", self.sql, other.sql), values }
     }
 
-    /// Negate the condition
     pub fn not(self) -> Self {
         Self { sql: format!("NOT ({})", self.sql), values: self.values }
     }
 
-    /// Get the SQL string
     pub fn sql(&self) -> &str {
         &self.sql
     }
 
-    /// Get the values
     pub fn values(&self) -> &[Value] {
         &self.values
     }
 
-    /// Take ownership of values
     pub fn into_values(self) -> Vec<Value> {
         self.values
     }
 }
 
-/// Order direction for ORDER BY clauses
-///
-/// Used with `Select::order_by` to specify the sort direction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Order {
-    /// Ascending order (smallest to largest, A to Z)
     Asc,
-    /// Descending order (largest to smallest, Z to A)
+
     Desc,
 }
 
@@ -185,10 +137,6 @@ impl std::fmt::Display for Order {
     }
 }
 
-/// Order by clause for sorting query results
-///
-/// Represents a column and direction for ORDER BY clauses.
-/// Created using [`OrderBy::asc`] or [`OrderBy::desc`].
 #[derive(Clone, Debug)]
 pub struct OrderBy {
     pub(crate) column:    String,
@@ -196,12 +144,10 @@ pub struct OrderBy {
 }
 
 impl OrderBy {
-    /// Create a new ascending order
     pub fn asc<C: ColumnTrait>(column: C) -> Self {
         Self { column: column.name().to_string(), direction: Order::Asc }
     }
 
-    /// Create a new descending order
     pub fn desc<C: ColumnTrait>(column: C) -> Self {
         Self { column: column.name().to_string(), direction: Order::Desc }
     }
@@ -212,7 +158,6 @@ mod tests {
     use super::*;
     use crate::value::ColumnType;
 
-    // Mock column for testing
     #[derive(Clone, Copy, Debug)]
     enum TestColumn {
         Id,
@@ -249,7 +194,6 @@ mod tests {
         }
     }
 
-    // Condition::eq tests
     #[test]
     fn test_condition_eq() {
         let cond = Condition::eq(TestColumn::Id, 42);
@@ -265,7 +209,6 @@ mod tests {
         assert_eq!(cond.values()[0], Value::Text("Alice".to_string()));
     }
 
-    // Condition::ne tests
     #[test]
     fn test_condition_ne() {
         let cond = Condition::ne(TestColumn::Id, 42);
@@ -273,7 +216,6 @@ mod tests {
         assert_eq!(cond.values()[0], Value::Integer(42));
     }
 
-    // Condition::gt tests
     #[test]
     fn test_condition_gt() {
         let cond = Condition::gt(TestColumn::Age, 18);
@@ -281,7 +223,6 @@ mod tests {
         assert_eq!(cond.values()[0], Value::Integer(18));
     }
 
-    // Condition::gte tests
     #[test]
     fn test_condition_gte() {
         let cond = Condition::gte(TestColumn::Age, 18);
@@ -289,7 +230,6 @@ mod tests {
         assert_eq!(cond.values()[0], Value::Integer(18));
     }
 
-    // Condition::lt tests
     #[test]
     fn test_condition_lt() {
         let cond = Condition::lt(TestColumn::Age, 65);
@@ -297,7 +237,6 @@ mod tests {
         assert_eq!(cond.values()[0], Value::Integer(65));
     }
 
-    // Condition::lte tests
     #[test]
     fn test_condition_lte() {
         let cond = Condition::lte(TestColumn::Age, 65);
@@ -305,7 +244,6 @@ mod tests {
         assert_eq!(cond.values()[0], Value::Integer(65));
     }
 
-    // Condition::like tests
     #[test]
     fn test_condition_like() {
         let cond = Condition::like(TestColumn::Name, "%Alice%");
@@ -313,7 +251,6 @@ mod tests {
         assert_eq!(cond.values()[0], Value::Text("%Alice%".to_string()));
     }
 
-    // Condition::not_like tests
     #[test]
     fn test_condition_not_like() {
         let cond = Condition::not_like(TestColumn::Name, "%Bob%");
@@ -321,7 +258,6 @@ mod tests {
         assert_eq!(cond.values()[0], Value::Text("%Bob%".to_string()));
     }
 
-    // Condition::contains tests
     #[test]
     fn test_condition_contains() {
         let cond = Condition::contains(TestColumn::Email, "@example.com");
@@ -329,7 +265,6 @@ mod tests {
         assert_eq!(cond.values()[0], Value::Text("%@example.com%".to_string()));
     }
 
-    // Condition::starts_with tests
     #[test]
     fn test_condition_starts_with() {
         let cond = Condition::starts_with(TestColumn::Name, "Al");
@@ -337,7 +272,6 @@ mod tests {
         assert_eq!(cond.values()[0], Value::Text("Al%".to_string()));
     }
 
-    // Condition::ends_with tests
     #[test]
     fn test_condition_ends_with() {
         let cond = Condition::ends_with(TestColumn::Email, ".com");
@@ -345,7 +279,6 @@ mod tests {
         assert_eq!(cond.values()[0], Value::Text("%.com".to_string()));
     }
 
-    // Condition::is_null tests
     #[test]
     fn test_condition_is_null() {
         let cond = Condition::is_null(TestColumn::Email);
@@ -353,7 +286,6 @@ mod tests {
         assert!(cond.values().is_empty());
     }
 
-    // Condition::is_not_null tests
     #[test]
     fn test_condition_is_not_null() {
         let cond = Condition::is_not_null(TestColumn::Email);
@@ -361,7 +293,6 @@ mod tests {
         assert!(cond.values().is_empty());
     }
 
-    // Condition::is_in tests
     #[test]
     fn test_condition_is_in() {
         let cond = Condition::is_in(TestColumn::Id, vec![1, 2, 3]);
@@ -386,7 +317,6 @@ mod tests {
         assert_eq!(cond.values().len(), 1);
     }
 
-    // Condition::not_in tests
     #[test]
     fn test_condition_not_in() {
         let cond = Condition::not_in(TestColumn::Id, vec![1, 2]);
@@ -394,7 +324,6 @@ mod tests {
         assert_eq!(cond.values().len(), 2);
     }
 
-    // Condition::between tests
     #[test]
     fn test_condition_between() {
         let cond = Condition::between(TestColumn::Age, 18, 65);
@@ -404,7 +333,6 @@ mod tests {
         assert_eq!(cond.values()[1], Value::Integer(65));
     }
 
-    // Condition::not_between tests
     #[test]
     fn test_condition_not_between() {
         let cond = Condition::not_between(TestColumn::Age, 0, 18);
@@ -412,7 +340,6 @@ mod tests {
         assert_eq!(cond.values().len(), 2);
     }
 
-    // Condition::raw tests
     #[test]
     fn test_condition_raw() {
         let cond = Condition::raw("id > ? AND age < ?", vec![Value::Integer(5), Value::Integer(30)]);
@@ -427,7 +354,6 @@ mod tests {
         assert!(cond.values().is_empty());
     }
 
-    // Condition::and tests
     #[test]
     fn test_condition_and() {
         let cond1 = Condition::eq(TestColumn::Id, 1);
@@ -440,7 +366,6 @@ mod tests {
         assert_eq!(combined.values()[1], Value::Text("Alice".to_string()));
     }
 
-    // Condition::or tests
     #[test]
     fn test_condition_or() {
         let cond1 = Condition::eq(TestColumn::Name, "Alice");
@@ -451,7 +376,6 @@ mod tests {
         assert_eq!(combined.values().len(), 2);
     }
 
-    // Condition::not tests
     #[test]
     fn test_condition_not() {
         let cond = Condition::eq(TestColumn::Id, 1).not();
@@ -459,7 +383,6 @@ mod tests {
         assert_eq!(cond.values().len(), 1);
     }
 
-    // Chained conditions
     #[test]
     fn test_condition_chained() {
         let cond = Condition::eq(TestColumn::Age, 25)
@@ -471,7 +394,6 @@ mod tests {
         assert_eq!(cond.values().len(), 3);
     }
 
-    // Accessor methods
     #[test]
     fn test_condition_sql() {
         let cond = Condition::eq(TestColumn::Id, 1);
@@ -494,7 +416,6 @@ mod tests {
         assert_eq!(values[1], Value::Integer(65));
     }
 
-    // Condition clone
     #[test]
     fn test_condition_clone() {
         let cond = Condition::eq(TestColumn::Id, 42);
@@ -503,7 +424,6 @@ mod tests {
         assert_eq!(cloned.values()[0], Value::Integer(42));
     }
 
-    // Order tests
     #[test]
     fn test_order_asc() {
         assert_eq!(Order::Asc, Order::Asc);
@@ -542,7 +462,6 @@ mod tests {
         assert_eq!(order, copied);
     }
 
-    // OrderBy tests
     #[test]
     fn test_order_by_asc() {
         let order_by = OrderBy::asc(TestColumn::Name);

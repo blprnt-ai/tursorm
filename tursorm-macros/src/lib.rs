@@ -1,7 +1,3 @@
-//! Procedural macros for tursorm
-//!
-//! This crate provides derive macros for defining database entities.
-
 use darling::FromDeriveInput;
 use darling::FromField;
 use darling::FromMeta;
@@ -12,10 +8,6 @@ use quote::format_ident;
 use quote::quote;
 use syn::DeriveInput;
 use syn::Type;
-
-// ============================================================================
-// Enums for foreign key actions
-// ============================================================================
 
 #[derive(Debug, Clone, Copy, Default, FromMeta)]
 enum OnDelete {
@@ -36,10 +28,6 @@ enum OnUpdate {
     #[default]
     None,
 }
-
-// ============================================================================
-// Field-level attribute parsing
-// ============================================================================
 
 #[derive(Debug, FromField)]
 #[darling(attributes(tursorm))]
@@ -65,7 +53,6 @@ struct FieldReceiver {
     #[darling(default)]
     pub default: Option<String>,
 
-    // Foreign key attributes
     #[darling(default)]
     pub foreign_key: bool,
 
@@ -79,10 +66,6 @@ struct FieldReceiver {
     pub on_update: Option<OnUpdate>,
 }
 
-// ============================================================================
-// Struct-level attribute parsing
-// ============================================================================
-
 #[derive(Debug, FromDeriveInput)]
 #[darling(attributes(tursorm), supports(struct_named))]
 struct EntityReceiver {
@@ -92,10 +75,6 @@ struct EntityReceiver {
     #[darling(default)]
     pub table_name: Option<String>,
 }
-
-// ============================================================================
-// Your cleaned-up domain types
-// ============================================================================
 
 #[derive(Debug)]
 struct ForeignKeyInfo {
@@ -170,10 +149,6 @@ struct EntityInfo {
     pub fields:      Vec<FieldInfo>,
 }
 
-// ============================================================================
-// Conversion logic
-// ============================================================================
-
 impl FieldReceiver {
     pub fn to_field_info(self) -> FieldInfo {
         let field_name = self.ident.expect("Expected named field");
@@ -225,36 +200,6 @@ impl EntityReceiver {
     }
 }
 
-/// Derive macro for creating a database entity model.
-///
-/// # Example
-///
-/// ```ignore
-/// use tursorm::prelude::*;
-///
-/// #[derive(Clone, Debug, Entity)]
-/// #[tursorm(table_name = "users")]
-/// pub struct User {
-///     #[tursorm(primary_key, auto_increment)]
-///     pub id: i64,
-///     pub name: String,
-///     pub email: String,
-///     #[tursorm(column_name = "created_at")]
-///     pub created_at: Option<String>,
-///     // Rename a column during migration (from "timestamp" to "updated_at")
-///     #[tursorm(renamed_from = "timestamp")]
-///     pub updated_at: i64,
-/// }
-/// ```
-///
-/// # Field Attributes
-///
-/// - `primary_key` - Mark field as primary key
-/// - `auto_increment` - Mark field as auto-increment
-/// - `unique` - Mark field as unique
-/// - `column_name = "name"` - Override the database column name
-/// - `renamed_from = "old_name"` - Rename column from old name during migration
-/// - `default = "value"` - Set default SQL expression
 #[proc_macro_derive(Entity, attributes(tursorm))]
 pub fn derive_entity(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as DeriveInput);
@@ -278,7 +223,6 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
 
     let table_name = entity_info.table_name.clone();
 
-    // Generate Column enum variants
     let column_variants: Vec<_> = entity_info
         .fields
         .iter()
@@ -288,7 +232,6 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
         })
         .collect();
 
-    // Generate column name mappings
     let column_name_arms: Vec<_> = entity_info
         .fields
         .iter()
@@ -299,7 +242,6 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
         })
         .collect();
 
-    // Generate column type mappings
     let column_type_arms: Vec<_> = entity_info
         .fields
         .iter()
@@ -318,13 +260,11 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
         panic!("Entity must have only one primary key field marked with #[tursorm(primary_key)]");
     }
 
-    // Find primary key
     let primary_key_field = primary_key_fields[0];
 
     let pk_variant = &primary_key_field.variant_name;
     let pk_field_name = &primary_key_field.field_name;
 
-    // Generate FromRow implementation
     let from_row_fields: Vec<_> = entity_info
         .fields
         .iter()
@@ -343,7 +283,6 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
         })
         .collect();
 
-    // Generate ActiveModel fields
     let active_model_fields: Vec<_> = entity_info
         .fields
         .iter()
@@ -356,7 +295,6 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
         })
         .collect();
 
-    // Generate ActiveModel from Model
     let active_model_from_model_fields: Vec<_> = entity_info
         .fields
         .iter()
@@ -368,7 +306,6 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
         })
         .collect();
 
-    // Generate insert columns and values (skip auto_increment fields that are NotSet)
     let insert_set_arms: Vec<_> = entity_info
         .fields
         .iter()
@@ -393,7 +330,6 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
         })
         .collect();
 
-    // Generate update set arms (exclude primary key)
     let update_set_arms: Vec<_> = entity_info
         .fields
         .iter()
@@ -412,14 +348,11 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
     let pk_column_name = &primary_key_field.column_name;
     let pk_is_auto_increment = primary_key_field.is_auto_increment;
 
-    // All column names for SELECT *
     let all_columns: Vec<_> = entity_info.fields.iter().map(|f| f.column_name.as_str()).collect();
     let all_columns_str = all_columns.join(", ");
 
-    // Column count
     let column_count = entity_info.fields.len();
 
-    // Generate is_nullable arms
     let is_nullable_arms: Vec<_> = entity_info
         .fields
         .iter()
@@ -430,7 +363,6 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
         })
         .collect();
 
-    // Generate is_primary_key arms
     let is_primary_key_arms: Vec<_> = entity_info
         .fields
         .iter()
@@ -441,7 +373,6 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
         })
         .collect();
 
-    // Generate is_auto_increment arms
     let is_auto_increment_arms: Vec<_> = entity_info
         .fields
         .iter()
@@ -452,7 +383,6 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
         })
         .collect();
 
-    // Generate is_unique arms
     let is_unique_arms: Vec<_> = entity_info
         .fields
         .iter()
@@ -463,7 +393,6 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
         })
         .collect();
 
-    // Generate default_value arms
     let default_value_arms: Vec<_> = entity_info
         .fields
         .iter()
@@ -476,7 +405,6 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
         })
         .collect();
 
-    // Generate renamed_from arms
     let renamed_from_arms: Vec<_> = entity_info
         .fields
         .iter()
@@ -489,7 +417,6 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
         })
         .collect();
 
-    // Generate foreign_key arms
     let foreign_key_arms: Vec<_> = entity_info
         .fields
         .iter()
@@ -516,7 +443,7 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
         .collect();
 
     quote! {
-        /// Column enum for #name
+
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub enum #column_enum_name {
             #(#column_variants),*
@@ -588,7 +515,7 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
             }
         }
 
-        /// Entity marker struct for #name
+
         #[derive(Clone, Copy, Debug, Default)]
         pub struct #entity_name;
 
@@ -635,17 +562,17 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
         }
 
         impl #entity_name {
-            /// Create a new default ActiveModel for this entity
-            ///
-            /// This is a convenience method to avoid fully-qualified syntax.
-            /// Instead of `<Entity as EntityTrait>::ActiveModel::default()`,
-            /// you can simply use `Entity::active_model()`.
+
+
+
+
+
             pub fn active_model() -> #active_model_name {
                 #active_model_name::default()
             }
         }
 
-        /// ActiveModel for #name - used for insert/update operations
+
         #[derive(Clone, Debug, Default)]
         pub struct #active_model_name {
             #(#active_model_fields),*
@@ -689,10 +616,6 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
     }
 }
 
-// ============================================================================
-// Helper functions
-// ============================================================================
-
 fn rust_type_to_column_type(ty: &Type, is_optional: bool) -> TokenStream2 {
     let inner_type = if is_optional { extract_option_inner_type(ty).unwrap_or(ty) } else { ty };
 
@@ -707,7 +630,6 @@ fn rust_type_to_column_type(ty: &Type, is_optional: bool) -> TokenStream2 {
                 "f32" | "f64" => quote! { tursorm::ColumnType::Float },
                 "String" | "str" => quote! { tursorm::ColumnType::Text },
                 "Vec" => {
-                    // Vec<u8> is Blob, other Vec<T> are Text (JSON arrays)
                     if let Some(inner) = extract_vec_inner_type(inner_type) {
                         if let Type::Path(inner_path) = inner {
                             if let Some(seg) = inner_path.path.segments.last() {
@@ -796,11 +718,10 @@ fn to_snake_case(ident: &Ident) -> String {
 }
 
 fn parse_references(refs: String) -> (String, String) {
-    // Parse "table_name.column_name" format
     let parts: Vec<&str> = refs.splitn(2, '.').collect();
     match parts.as_slice() {
         [table, column] => (table.to_string(), column.to_string()),
-        [table] => (table.to_string(), "id".to_string()), // default to "id"
+        [table] => (table.to_string(), "id".to_string()),
         _ => panic!("Invalid references format: {}", refs),
     }
 }

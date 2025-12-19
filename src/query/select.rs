@@ -1,5 +1,3 @@
-//! SELECT query builder
-
 use std::marker::PhantomData;
 
 use crate::ColumnTrait;
@@ -11,21 +9,6 @@ use crate::OrderBy;
 use crate::Result;
 use crate::Value;
 
-/// SELECT query builder for retrieving records from the database
-///
-/// Use this builder to construct SELECT queries with filtering, ordering,
-/// and pagination. The builder uses a fluent API for chaining operations.
-///
-/// # Example
-///
-/// ```ignore
-/// let users = Select::<UserEntity>::new()
-///     .filter(Condition::eq(UserColumn::Status, "active"))
-///     .order_by_desc(UserColumn::CreatedAt)
-///     .limit(10)
-///     .all(&conn)
-///     .await?;
-/// ```
 #[derive(Clone, Debug)]
 pub struct Select<E: EntityTrait> {
     conditions: Vec<Condition>,
@@ -37,7 +20,6 @@ pub struct Select<E: EntityTrait> {
 }
 
 impl<E: EntityTrait> Select<E> {
-    /// Create a new SELECT query
     pub fn new() -> Self {
         Self {
             conditions: Vec::new(),
@@ -49,61 +31,51 @@ impl<E: EntityTrait> Select<E> {
         }
     }
 
-    /// Add a filter condition
     pub fn filter(mut self, condition: Condition) -> Self {
         self.conditions.push(condition);
         self
     }
 
-    /// Add an AND filter (alias for filter)
     pub fn and_filter(self, condition: Condition) -> Self {
         self.filter(condition)
     }
 
-    /// Select specific columns
     pub fn columns<C: ColumnTrait>(mut self, columns: Vec<C>) -> Self {
         self.columns = Some(columns.iter().map(|c| c.name().to_string()).collect());
         self
     }
 
-    /// Add ORDER BY clause (ascending)
     pub fn order_by_asc<C: ColumnTrait>(mut self, column: C) -> Self {
         self.order_by.push(OrderBy::asc(column));
         self
     }
 
-    /// Add ORDER BY clause (descending)
     pub fn order_by_desc<C: ColumnTrait>(mut self, column: C) -> Self {
         self.order_by.push(OrderBy::desc(column));
         self
     }
 
-    /// Add ORDER BY clause with direction
     pub fn order_by<C: ColumnTrait>(mut self, column: C, direction: Order) -> Self {
         self.order_by.push(OrderBy { column: column.name().to_string(), direction });
         self
     }
 
-    /// Set LIMIT clause
     pub fn limit(mut self, limit: usize) -> Self {
         self.limit = Some(limit);
         self
     }
 
-    /// Set OFFSET clause
     pub fn offset(mut self, offset: usize) -> Self {
         self.offset = Some(offset);
         self
     }
 
-    /// Build the SQL query and parameters
     pub fn build(&self) -> (String, Vec<Value>) {
         let columns = self.columns.as_ref().map(|c| c.join(", ")).unwrap_or_else(|| E::all_columns().to_string());
 
         let mut sql = format!("SELECT {} FROM {}", columns, E::table_name());
         let mut params = Vec::new();
 
-        // WHERE clause
         if !self.conditions.is_empty() {
             let where_parts: Vec<String> = self.conditions.iter().map(|c| format!("({})", c.sql())).collect();
             sql.push_str(" WHERE ");
@@ -114,7 +86,6 @@ impl<E: EntityTrait> Select<E> {
             }
         }
 
-        // ORDER BY clause
         if !self.order_by.is_empty() {
             let order_parts: Vec<String> =
                 self.order_by.iter().map(|o| format!("{} {}", o.column, o.direction)).collect();
@@ -122,12 +93,10 @@ impl<E: EntityTrait> Select<E> {
             sql.push_str(&order_parts.join(", "));
         }
 
-        // LIMIT clause
         if let Some(limit) = self.limit {
             sql.push_str(&format!(" LIMIT {}", limit));
         }
 
-        // OFFSET clause
         if let Some(offset) = self.offset {
             sql.push_str(&format!(" OFFSET {}", offset));
         }
@@ -135,12 +104,6 @@ impl<E: EntityTrait> Select<E> {
         (sql, params)
     }
 
-    /// Execute the query and return all matching results
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the query execution fails or if any row
-    /// cannot be converted to the model type.
     pub async fn all(self, conn: &crate::Connection) -> Result<Vec<E::Model>> {
         let (sql, params) = self.build();
         let params: Vec<turso::Value> = params.into_iter().collect();
@@ -155,15 +118,6 @@ impl<E: EntityTrait> Select<E> {
         Ok(results)
     }
 
-    /// Execute the query and return the first result
-    ///
-    /// Automatically applies `LIMIT 1` to the query. Returns `None` if
-    /// no rows match the query conditions.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the query execution fails or if the row
-    /// cannot be converted to the model type.
     pub async fn one(self, conn: &crate::Connection) -> Result<Option<E::Model>> {
         let query = self.limit(1);
         let (sql, params) = query.build();
@@ -174,19 +128,10 @@ impl<E: EntityTrait> Select<E> {
         if let Some(row) = rows.next().await? { Ok(Some(E::Model::from_row(&row)?)) } else { Ok(None) }
     }
 
-    /// Execute a COUNT(*) query and return the number of matching rows
-    ///
-    /// This method ignores any ORDER BY, LIMIT, or OFFSET clauses and
-    /// only uses the WHERE conditions.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the query execution fails.
     pub async fn count(self, conn: &crate::Connection) -> Result<i64> {
         let mut sql = format!("SELECT COUNT(*) FROM {}", E::table_name());
         let mut params = Vec::new();
 
-        // WHERE clause
         if !self.conditions.is_empty() {
             let where_parts: Vec<String> = self.conditions.iter().map(|c| format!("({})", c.sql())).collect();
             sql.push_str(" WHERE ");
@@ -211,14 +156,6 @@ impl<E: EntityTrait> Select<E> {
         }
     }
 
-    /// Check if any rows exist matching the query conditions
-    ///
-    /// This is more efficient than `count()` when you only need to know
-    /// if at least one row exists, as it applies `LIMIT 1`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the query execution fails.
     pub async fn exists(self, conn: &crate::Connection) -> Result<bool> {
         let count = self.limit(1).count(conn).await?;
         Ok(count > 0)
@@ -241,7 +178,6 @@ mod tests {
     use crate::IntoValue;
     use crate::ModelTrait;
 
-    // Mock Entity and related types for testing
     #[derive(Clone, Debug, PartialEq)]
     struct TestModel {
         id:    i64,
@@ -260,7 +196,6 @@ mod tests {
 
     impl FromRow for TestModel {
         fn from_row(_row: &turso::Row) -> crate::error::Result<Self> {
-            // Mock implementation - in real tests this would parse the row
             Ok(TestModel { id: 1, name: "test".to_string(), email: "test@test.com".to_string(), age: Some(25) })
         }
     }
@@ -374,7 +309,6 @@ mod tests {
         }
     }
 
-    // Select::new tests
     #[test]
     fn test_select_new() {
         let select = Select::<TestEntity>::new();
@@ -390,7 +324,6 @@ mod tests {
         assert_eq!(sql, "SELECT id, name, email, age FROM test_users");
     }
 
-    // Select::filter tests
     #[test]
     fn test_select_filter_single() {
         let select = Select::<TestEntity>::new().filter(Condition::eq(TestColumn::Id, 1));
@@ -415,7 +348,6 @@ mod tests {
         assert_eq!(params.len(), 2);
     }
 
-    // Select::and_filter tests
     #[test]
     fn test_select_and_filter() {
         let select = Select::<TestEntity>::new().and_filter(Condition::eq(TestColumn::Id, 1));
@@ -424,7 +356,6 @@ mod tests {
         assert!(sql.contains("WHERE (id = ?)"));
     }
 
-    // Select::columns tests
     #[test]
     fn test_select_specific_columns() {
         let select = Select::<TestEntity>::new().columns(vec![TestColumn::Id, TestColumn::Name]);
@@ -433,7 +364,6 @@ mod tests {
         assert_eq!(sql, "SELECT id, name FROM test_users");
     }
 
-    // Select::order_by tests
     #[test]
     fn test_select_order_by_asc() {
         let select = Select::<TestEntity>::new().order_by_asc(TestColumn::Name);
@@ -466,7 +396,6 @@ mod tests {
         assert!(sql.contains("ORDER BY name ASC, age DESC"));
     }
 
-    // Select::limit tests
     #[test]
     fn test_select_limit() {
         let select = Select::<TestEntity>::new().limit(10);
@@ -475,7 +404,6 @@ mod tests {
         assert!(sql.contains("LIMIT 10"));
     }
 
-    // Select::offset tests
     #[test]
     fn test_select_offset() {
         let select = Select::<TestEntity>::new().offset(20);
@@ -493,7 +421,6 @@ mod tests {
         assert!(sql.contains("OFFSET 20"));
     }
 
-    // Combined query tests
     #[test]
     fn test_select_complex_query() {
         let select = Select::<TestEntity>::new()
@@ -511,10 +438,9 @@ mod tests {
         assert!(sql.contains("ORDER BY age DESC"));
         assert!(sql.contains("LIMIT 10"));
         assert!(sql.contains("OFFSET 0"));
-        assert_eq!(params.len(), 1); // Only name = ? has a value
+        assert_eq!(params.len(), 1);
     }
 
-    // Test query building order
     #[test]
     fn test_select_clause_order() {
         let select = Select::<TestEntity>::new()
@@ -524,7 +450,6 @@ mod tests {
             .order_by_asc(TestColumn::Name);
         let (sql, _) = select.build();
 
-        // Verify clauses are in correct order regardless of method call order
         let where_pos = sql.find("WHERE").unwrap();
         let order_pos = sql.find("ORDER BY").unwrap();
         let limit_pos = sql.find("LIMIT").unwrap();
@@ -535,7 +460,6 @@ mod tests {
         assert!(limit_pos < offset_pos);
     }
 
-    // Clone tests
     #[test]
     fn test_select_clone() {
         let select = Select::<TestEntity>::new().filter(Condition::eq(TestColumn::Id, 1)).limit(10);
@@ -548,7 +472,6 @@ mod tests {
         assert_eq!(params1, params2);
     }
 
-    // Debug test
     #[test]
     fn test_select_debug() {
         let select = Select::<TestEntity>::new().limit(5);
@@ -556,7 +479,6 @@ mod tests {
         assert!(debug.contains("Select"));
     }
 
-    // Empty conditions test
     #[test]
     fn test_select_no_conditions() {
         let select = Select::<TestEntity>::new();
@@ -566,7 +488,6 @@ mod tests {
         assert!(params.is_empty());
     }
 
-    // Test with IN condition
     #[test]
     fn test_select_with_in_condition() {
         let select = Select::<TestEntity>::new().filter(Condition::is_in(TestColumn::Id, vec![1, 2, 3]));
@@ -576,7 +497,6 @@ mod tests {
         assert_eq!(params.len(), 3);
     }
 
-    // Test with BETWEEN condition
     #[test]
     fn test_select_with_between_condition() {
         let select = Select::<TestEntity>::new().filter(Condition::between(TestColumn::Age, 18, 65));
