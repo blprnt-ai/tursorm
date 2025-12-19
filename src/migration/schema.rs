@@ -19,9 +19,9 @@ use crate::Result;
 /// // Or use the async helper
 /// Schema::create_table::<UserEntity>(&conn, true).await?;
 /// ```
-pub struct Schema;
+pub struct MigrationSchema;
 
-impl Schema {
+impl MigrationSchema {
     /// Create a table for an entity
     ///
     /// This generates a CREATE TABLE statement based on the entity's column metadata.
@@ -343,7 +343,7 @@ mod tests {
     // Schema::create_table_sql tests
     #[test]
     fn test_schema_create_table_sql_basic() {
-        let sql = Schema::create_table_sql::<TestEntity>(false);
+        let sql = MigrationSchema::create_table_sql::<TestEntity>(false);
 
         assert!(sql.contains("CREATE TABLE test_users"));
         assert!(sql.contains("id INTEGER PRIMARY KEY AUTOINCREMENT"));
@@ -354,14 +354,14 @@ mod tests {
 
     #[test]
     fn test_schema_create_table_sql_if_not_exists() {
-        let sql = Schema::create_table_sql::<TestEntity>(true);
+        let sql = MigrationSchema::create_table_sql::<TestEntity>(true);
 
         assert!(sql.contains("CREATE TABLE IF NOT EXISTS test_users"));
     }
 
     #[test]
     fn test_schema_create_table_sql_no_if_not_exists() {
-        let sql = Schema::create_table_sql::<TestEntity>(false);
+        let sql = MigrationSchema::create_table_sql::<TestEntity>(false);
 
         assert!(!sql.contains("IF NOT EXISTS"));
     }
@@ -369,14 +369,14 @@ mod tests {
     // Schema::drop_table_sql tests
     #[test]
     fn test_schema_drop_table_sql_basic() {
-        let sql = Schema::drop_table_sql::<TestEntity>(false);
+        let sql = MigrationSchema::drop_table_sql::<TestEntity>(false);
 
         assert_eq!(sql, "DROP TABLE test_users");
     }
 
     #[test]
     fn test_schema_drop_table_sql_if_exists() {
-        let sql = Schema::drop_table_sql::<TestEntity>(true);
+        let sql = MigrationSchema::drop_table_sql::<TestEntity>(true);
 
         assert_eq!(sql, "DROP TABLE IF EXISTS test_users");
     }
@@ -385,7 +385,7 @@ mod tests {
     #[test]
     fn test_schema_struct() {
         // Schema is a unit struct, so we just verify it exists
-        let _schema = Schema;
+        let _schema = MigrationSchema;
     }
 
     // Entity with unique column test
@@ -509,7 +509,7 @@ mod tests {
 
     #[test]
     fn test_schema_create_table_with_unique() {
-        let sql = Schema::create_table_sql::<UniqueTestEntity>(false);
+        let sql = MigrationSchema::create_table_sql::<UniqueTestEntity>(false);
 
         // email should be NOT NULL UNIQUE since it's not nullable
         assert!(sql.contains("email TEXT NOT NULL UNIQUE"));
@@ -639,7 +639,7 @@ mod tests {
 
     #[test]
     fn test_schema_create_table_with_default() {
-        let sql = Schema::create_table_sql::<DefaultTestEntity>(false);
+        let sql = MigrationSchema::create_table_sql::<DefaultTestEntity>(false);
 
         assert!(sql.contains("status TEXT NOT NULL DEFAULT 'active'"));
     }
@@ -764,7 +764,7 @@ mod tests {
 
     #[test]
     fn test_schema_create_table_non_autoincrement_pk() {
-        let sql = Schema::create_table_sql::<CompositeEntity>(false);
+        let sql = MigrationSchema::create_table_sql::<CompositeEntity>(false);
 
         // Should have PRIMARY KEY constraint at the end, not inline AUTOINCREMENT
         assert!(sql.contains("PRIMARY KEY (user_id)"));

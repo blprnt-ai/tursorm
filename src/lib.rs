@@ -155,7 +155,6 @@
 pub(crate) mod connection;
 pub(crate) mod error;
 pub(crate) mod query;
-pub(crate) mod schema;
 pub(crate) mod traits;
 pub(crate) mod value;
 

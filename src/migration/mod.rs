@@ -25,7 +25,11 @@
 //! ]).await?;
 //! ```
 
+mod schema;
+
 use std::collections::HashMap;
+
+pub use schema::MigrationSchema;
 
 use crate::ForeignKeyInfo;
 use crate::OnDelete;

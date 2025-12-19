@@ -144,13 +144,13 @@ async fn insert_sample_users(conn: &Connection) -> Vec<User> {
 // =============================================================================
 
 mod schema_tests {
-    use tursorm::Schema;
+    use tursorm::MigrationSchema;
 
     use super::*;
 
     #[tokio::test]
     async fn test_create_table_sql_generation() {
-        let sql = Schema::create_table_sql::<UserEntity>(false);
+        let sql = MigrationSchema::create_table_sql::<UserEntity>(false);
         assert!(sql.contains("CREATE TABLE users"));
         assert!(sql.contains("id INTEGER PRIMARY KEY AUTOINCREMENT"));
         assert!(sql.contains("name TEXT NOT NULL"));
@@ -160,16 +160,16 @@ mod schema_tests {
 
     #[tokio::test]
     async fn test_create_table_if_not_exists() {
-        let sql = Schema::create_table_sql::<UserEntity>(true);
+        let sql = MigrationSchema::create_table_sql::<UserEntity>(true);
         assert!(sql.contains("CREATE TABLE IF NOT EXISTS users"));
     }
 
     #[tokio::test]
     async fn test_drop_table_sql_generation() {
-        let sql = Schema::drop_table_sql::<UserEntity>(false);
+        let sql = MigrationSchema::drop_table_sql::<UserEntity>(false);
         assert_eq!(sql, "DROP TABLE users");
 
-        let sql_if_exists = Schema::drop_table_sql::<UserEntity>(true);
+        let sql_if_exists = MigrationSchema::drop_table_sql::<UserEntity>(true);
         assert_eq!(sql_if_exists, "DROP TABLE IF EXISTS users");
     }
 
@@ -178,7 +178,7 @@ mod schema_tests {
         let conn = create_test_db().await;
 
         // Create table using Schema helper
-        Schema::create_table::<UserEntity>(&conn, false).await.unwrap();
+        MigrationSchema::create_table::<UserEntity>(&conn, false).await.unwrap();
 
         // Verify table exists by inserting a record
         let model = UserActiveModel {
@@ -194,8 +194,8 @@ mod schema_tests {
     async fn test_schema_drop_table() {
         let conn = create_test_db().await;
 
-        Schema::create_table::<UserEntity>(&conn, false).await.unwrap();
-        Schema::drop_table::<UserEntity>(&conn, false).await.unwrap();
+        MigrationSchema::create_table::<UserEntity>(&conn, false).await.unwrap();
+        MigrationSchema::drop_table::<UserEntity>(&conn, false).await.unwrap();
 
         // Verify table is gone - inserting should fail
         let model = UserActiveModel {
