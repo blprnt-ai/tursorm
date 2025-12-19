@@ -10,6 +10,6 @@ pub mod migration;
 
 pub mod prelude;
 pub use prelude::*;
-pub use traits::entity::EntityDeleteExt;
-pub use traits::entity::EntitySelectExt;
-pub use traits::model::ModelDeleteExt;
+pub use traits::record::RecordDeleteExt;
+pub use traits::table::TableDeleteExt;
+pub use traits::table::TableSelectExt;

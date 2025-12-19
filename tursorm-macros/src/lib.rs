@@ -68,7 +68,7 @@ struct FieldReceiver {
 
 #[derive(Debug, FromDeriveInput)]
 #[darling(attributes(tursorm), supports(struct_named))]
-struct EntityReceiver {
+struct TableReceiver {
     pub ident: Ident,
     pub data:  darling::ast::Data<(), FieldReceiver>,
 
@@ -143,7 +143,7 @@ struct FieldInfo {
 }
 
 #[derive(Debug)]
-struct EntityInfo {
+struct TableInfo {
     pub struct_name: Ident,
     pub table_name:  String,
     pub fields:      Vec<FieldInfo>,
@@ -189,22 +189,22 @@ impl FieldReceiver {
     }
 }
 
-impl EntityReceiver {
-    pub fn to_entity_info(self) -> EntityInfo {
+impl TableReceiver {
+    pub fn to_entity_info(self) -> TableInfo {
         let table_name = self.table_name.unwrap_or_else(|| to_snake_case(&self.ident));
 
         let fields =
             self.data.take_struct().expect("Expected struct").fields.into_iter().map(|f| f.to_field_info()).collect();
 
-        EntityInfo { struct_name: self.ident, table_name, fields }
+        TableInfo { struct_name: self.ident, table_name, fields }
     }
 }
 
-#[proc_macro_derive(Entity, attributes(tursorm))]
+#[proc_macro_derive(Table, attributes(tursorm))]
 pub fn derive_entity(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as DeriveInput);
 
-    let receiver = match EntityReceiver::from_derive_input(&input) {
+    let receiver = match TableReceiver::from_derive_input(&input) {
         Ok(r) => r,
         Err(e) => return e.write_errors().into(),
     };
@@ -215,13 +215,13 @@ pub fn derive_entity(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
     proc_macro::TokenStream::from(expanded)
 }
 
-fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
-    let name = &entity_info.struct_name;
-    let entity_name = format_ident!("{}Entity", name);
-    let column_enum_name = format_ident!("{}Column", name);
-    let active_model_name = format_ident!("{}ActiveModel", name);
+fn impl_entity(entity_info: &TableInfo) -> TokenStream2 {
+    let struct_name = &entity_info.struct_name;
+    let table_name = format_ident!("{}Table", struct_name);
+    let column_enum_name = format_ident!("{}Column", struct_name);
+    let change_set_name = format_ident!("{}ChangeSet", struct_name);
 
-    let table_name = entity_info.table_name.clone();
+    let db_table_name = entity_info.table_name.clone();
 
     let column_variants: Vec<_> = entity_info
         .fields
@@ -255,9 +255,9 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
     let primary_key_fields = entity_info.fields.iter().filter(|f| f.is_primary_key).collect::<Vec<_>>();
 
     if primary_key_fields.is_empty() {
-        panic!("Entity must have a primary key field marked with #[tursorm(primary_key)]");
+        panic!("Table must have a primary key field marked with #[tursorm(primary_key)]");
     } else if primary_key_fields.len() > 1 {
-        panic!("Entity must have only one primary key field marked with #[tursorm(primary_key)]");
+        panic!("Table must have only one primary key field marked with #[tursorm(primary_key)]");
     }
 
     let primary_key_field = primary_key_fields[0];
@@ -283,25 +283,25 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
         })
         .collect();
 
-    let active_model_fields: Vec<_> = entity_info
+    let change_set_fields: Vec<_> = entity_info
         .fields
         .iter()
         .map(|f| {
             let field_name = &f.field_name;
             let field_type = &f.field_type;
             quote! {
-                pub #field_name: tursorm::ActiveValue<#field_type>
+                pub #field_name: tursorm::FieldValue<#field_type>
             }
         })
         .collect();
 
-    let active_model_from_model_fields: Vec<_> = entity_info
+    let change_set_from_record_fields: Vec<_> = entity_info
         .fields
         .iter()
         .map(|f| {
             let field_name = &f.field_name;
             quote! {
-                #field_name: tursorm::ActiveValue::Set(model.#field_name.clone())
+                #field_name: tursorm::FieldValue::Change(record.#field_name.clone())
             }
         })
         .collect();
@@ -314,14 +314,14 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
             let col_name = &f.column_name;
             if f.is_auto_increment {
                 quote! {
-                    if let tursorm::ActiveValue::Set(ref v) = self.#field_name {
+                    if let tursorm::FieldValue::Change(ref v) = self.#field_name {
                         columns.push(#col_name);
                         values.push(tursorm::IntoValue::into_value(v.clone()));
                     }
                 }
             } else {
                 quote! {
-                    if let tursorm::ActiveValue::Set(ref v) = self.#field_name {
+                    if let tursorm::FieldValue::Change(ref v) = self.#field_name {
                         columns.push(#col_name);
                         values.push(tursorm::IntoValue::into_value(v.clone()));
                     }
@@ -338,7 +338,7 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
             let field_name = &f.field_name;
             let col_name = &f.column_name;
             quote! {
-                if let tursorm::ActiveValue::Set(ref v) = self.#field_name {
+                if let tursorm::FieldValue::Change(ref v) = self.#field_name {
                     sets.push((#col_name, tursorm::IntoValue::into_value(v.clone())));
                 }
             }
@@ -517,15 +517,15 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
 
 
         #[derive(Clone, Copy, Debug, Default)]
-        pub struct #entity_name;
+        pub struct #table_name;
 
-        impl tursorm::EntityTrait for #entity_name {
-            type Model = #name;
+        impl tursorm::TableTrait for #table_name {
+            type Record = #struct_name;
             type Column = #column_enum_name;
-            type ActiveModel = #active_model_name;
+            type ChangeSet = #change_set_name;
 
             fn table_name() -> &'static str {
-                #table_name
+                #db_table_name
             }
 
             fn primary_key() -> Self::Column {
@@ -545,7 +545,7 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
             }
         }
 
-        impl tursorm::FromRow for #name {
+        impl tursorm::FromRow for #struct_name {
             fn from_row(row: &tursorm::Row) -> tursorm::Result<Self> {
                 Ok(Self {
                     #(#from_row_fields),*
@@ -553,33 +553,28 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
             }
         }
 
-        impl tursorm::ModelTrait for #name {
-            type Entity = #entity_name;
+        impl tursorm::RecordTrait for #struct_name {
+            type Table = #table_name;
 
             fn get_primary_key_value(&self) -> tursorm::Value {
                 tursorm::IntoValue::into_value(self.#pk_field_name.clone())
             }
         }
 
-        impl #entity_name {
-
-
-
-
-
-            pub fn active_model() -> #active_model_name {
-                #active_model_name::default()
+        impl #table_name {
+            pub fn change_set() -> #change_set_name {
+                #change_set_name::default()
             }
         }
 
 
         #[derive(Clone, Debug, Default)]
-        pub struct #active_model_name {
-            #(#active_model_fields),*
+        pub struct #change_set_name {
+            #(#change_set_fields),*
         }
 
-        impl tursorm::ActiveModelTrait for #active_model_name {
-            type Entity = #entity_name;
+        impl tursorm::ChangeSetTrait for #change_set_name {
+            type Table = #table_name;
 
             fn get_insert_columns_and_values(&self) -> (Vec<&'static str>, Vec<tursorm::Value>) {
                 let mut columns = Vec::new();
@@ -596,8 +591,8 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
 
             fn get_primary_key_value(&self) -> Option<tursorm::Value> {
                 match &self.#pk_field_name {
-                    tursorm::ActiveValue::Set(v) => Some(tursorm::IntoValue::into_value(v.clone())),
-                    tursorm::ActiveValue::NotSet => None,
+                    tursorm::FieldValue::Change(v) => Some(tursorm::IntoValue::into_value(v.clone())),
+                    tursorm::FieldValue::Keep => None,
                 }
             }
 
@@ -606,10 +601,10 @@ fn impl_entity(entity_info: &EntityInfo) -> TokenStream2 {
             }
         }
 
-        impl From<#name> for #active_model_name {
-            fn from(model: #name) -> Self {
+        impl From<#struct_name> for #change_set_name {
+            fn from(record: #struct_name) -> Self {
                 Self {
-                    #(#active_model_from_model_fields),*
+                    #(#change_set_from_record_fields),*
                 }
             }
         }

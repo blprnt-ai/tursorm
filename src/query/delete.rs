@@ -1,17 +1,17 @@
 use std::marker::PhantomData;
 
 use crate::Condition;
-use crate::EntityTrait;
 use crate::Result;
+use crate::TableTrait;
 use crate::Value;
 
 #[derive(Clone, Debug)]
-pub struct Delete<E: EntityTrait> {
+pub struct Delete<E: TableTrait> {
     conditions: Vec<Condition>,
     _entity:    PhantomData<E>,
 }
 
-impl<E: EntityTrait> Delete<E> {
+impl<E: TableTrait> Delete<E> {
     pub fn new() -> Self {
         Self { conditions: Vec::new(), _entity: PhantomData }
     }
@@ -46,7 +46,7 @@ impl<E: EntityTrait> Delete<E> {
     }
 }
 
-impl<E: EntityTrait> Default for Delete<E> {
+impl<E: TableTrait> Default for Delete<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -55,53 +55,53 @@ impl<E: EntityTrait> Default for Delete<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ActiveModelTrait;
-    use crate::ActiveValue;
+    use crate::ChangeSetTrait;
     use crate::ColumnTrait;
     use crate::ColumnType;
+    use crate::FieldValue;
     use crate::FromRow;
-    use crate::ModelTrait;
+    use crate::RecordTrait;
     use crate::Value;
 
     #[derive(Clone, Debug, PartialEq)]
-    struct TestModel {
+    struct TestRecord {
         id:    i64,
         name:  String,
         email: String,
     }
 
-    impl ModelTrait for TestModel {
-        type Entity = TestEntity;
+    impl RecordTrait for TestRecord {
+        type Table = TestTable;
 
         fn get_primary_key_value(&self) -> Value {
             Value::Integer(self.id)
         }
     }
 
-    impl FromRow for TestModel {
+    impl FromRow for TestRecord {
         fn from_row(_row: &turso::Row) -> crate::error::Result<Self> {
-            Ok(TestModel { id: 1, name: "test".to_string(), email: "test@test.com".to_string() })
+            Ok(TestRecord { id: 1, name: "test".to_string(), email: "test@test.com".to_string() })
         }
     }
 
     #[derive(Clone, Debug, Default)]
-    struct TestActiveModel {
-        id:    ActiveValue<i64>,
-        name:  ActiveValue<String>,
-        email: ActiveValue<String>,
+    struct TestChangeSet {
+        id:    FieldValue<i64>,
+        name:  FieldValue<String>,
+        email: FieldValue<String>,
     }
 
-    impl ActiveModelTrait for TestActiveModel {
-        type Entity = TestEntity;
+    impl ChangeSetTrait for TestChangeSet {
+        type Table = TestTable;
 
         fn get_insert_columns_and_values(&self) -> (Vec<&'static str>, Vec<Value>) {
             let mut columns = Vec::new();
             let mut values = Vec::new();
-            if self.name.is_set() {
+            if self.name.is_changed() {
                 columns.push("name");
                 values.push(Value::Text(self.name.clone().take().unwrap()));
             }
-            if self.email.is_set() {
+            if self.email.is_changed() {
                 columns.push("email");
                 values.push(Value::Text(self.email.clone().take().unwrap()));
             }
@@ -110,10 +110,10 @@ mod tests {
 
         fn get_update_sets(&self) -> Vec<(&'static str, Value)> {
             let mut sets = Vec::new();
-            if self.name.is_set() {
+            if self.name.is_changed() {
                 sets.push(("name", Value::Text(self.name.clone().take().unwrap())));
             }
-            if self.email.is_set() {
+            if self.email.is_changed() {
                 sets.push(("email", Value::Text(self.email.clone().take().unwrap())));
             }
             sets
@@ -163,12 +163,12 @@ mod tests {
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestEntity;
+    struct TestTable;
 
-    impl EntityTrait for TestEntity {
-        type ActiveModel = TestActiveModel;
+    impl TableTrait for TestTable {
+        type ChangeSet = TestChangeSet;
         type Column = TestColumn;
-        type Model = TestModel;
+        type Record = TestRecord;
 
         fn table_name() -> &'static str {
             "test_users"
@@ -193,7 +193,7 @@ mod tests {
 
     #[test]
     fn test_delete_new() {
-        let delete = Delete::<TestEntity>::new();
+        let delete = Delete::<TestTable>::new();
         let (sql, params) = delete.build();
 
         assert_eq!(sql, "DELETE FROM test_users");
@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_delete_default() {
-        let delete = Delete::<TestEntity>::default();
+        let delete = Delete::<TestTable>::default();
         let (sql, params) = delete.build();
 
         assert_eq!(sql, "DELETE FROM test_users");
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn test_delete_filter_single() {
-        let delete = Delete::<TestEntity>::new().filter(Condition::eq(TestColumn::Id, 1));
+        let delete = Delete::<TestTable>::new().filter(Condition::eq(TestColumn::Id, 1));
         let (sql, params) = delete.build();
 
         assert_eq!(sql, "DELETE FROM test_users WHERE (id = ?)");
@@ -221,7 +221,7 @@ mod tests {
 
     #[test]
     fn test_delete_filter_multiple() {
-        let delete = Delete::<TestEntity>::new()
+        let delete = Delete::<TestTable>::new()
             .filter(Condition::eq(TestColumn::Name, "Alice"))
             .filter(Condition::is_null(TestColumn::Email));
         let (sql, params) = delete.build();
@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn test_delete_with_gt_condition() {
-        let delete = Delete::<TestEntity>::new().filter(Condition::gt(TestColumn::Id, 100));
+        let delete = Delete::<TestTable>::new().filter(Condition::gt(TestColumn::Id, 100));
         let (sql, params) = delete.build();
 
         assert!(sql.contains("WHERE (id > ?)"));
@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn test_delete_with_lt_condition() {
-        let delete = Delete::<TestEntity>::new().filter(Condition::lt(TestColumn::Id, 10));
+        let delete = Delete::<TestTable>::new().filter(Condition::lt(TestColumn::Id, 10));
         let (sql, _) = delete.build();
 
         assert!(sql.contains("WHERE (id < ?)"));
@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn test_delete_with_like_condition() {
-        let delete = Delete::<TestEntity>::new().filter(Condition::like(TestColumn::Name, "%test%"));
+        let delete = Delete::<TestTable>::new().filter(Condition::like(TestColumn::Name, "%test%"));
         let (sql, params) = delete.build();
 
         assert!(sql.contains("WHERE (name LIKE ?)"));
@@ -261,7 +261,7 @@ mod tests {
 
     #[test]
     fn test_delete_with_is_null_condition() {
-        let delete = Delete::<TestEntity>::new().filter(Condition::is_null(TestColumn::Email));
+        let delete = Delete::<TestTable>::new().filter(Condition::is_null(TestColumn::Email));
         let (sql, params) = delete.build();
 
         assert!(sql.contains("WHERE (email IS NULL)"));
@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn test_delete_with_is_not_null_condition() {
-        let delete = Delete::<TestEntity>::new().filter(Condition::is_not_null(TestColumn::Email));
+        let delete = Delete::<TestTable>::new().filter(Condition::is_not_null(TestColumn::Email));
         let (sql, params) = delete.build();
 
         assert!(sql.contains("WHERE (email IS NOT NULL)"));
@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn test_delete_with_in_condition() {
-        let delete = Delete::<TestEntity>::new().filter(Condition::is_in(TestColumn::Id, vec![1, 2, 3, 4, 5]));
+        let delete = Delete::<TestTable>::new().filter(Condition::is_in(TestColumn::Id, vec![1, 2, 3, 4, 5]));
         let (sql, params) = delete.build();
 
         assert!(sql.contains("WHERE (id IN (?, ?, ?, ?, ?))"));
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn test_delete_with_not_in_condition() {
-        let delete = Delete::<TestEntity>::new().filter(Condition::not_in(TestColumn::Id, vec![1, 2]));
+        let delete = Delete::<TestTable>::new().filter(Condition::not_in(TestColumn::Id, vec![1, 2]));
         let (sql, params) = delete.build();
 
         assert!(sql.contains("WHERE (id NOT IN (?, ?))"));
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn test_delete_with_between_condition() {
-        let delete = Delete::<TestEntity>::new().filter(Condition::between(TestColumn::Id, 10, 100));
+        let delete = Delete::<TestTable>::new().filter(Condition::between(TestColumn::Id, 10, 100));
         let (sql, params) = delete.build();
 
         assert!(sql.contains("WHERE (id BETWEEN ? AND ?)"));
@@ -310,7 +310,7 @@ mod tests {
     fn test_delete_with_and_condition() {
         let combined =
             Condition::eq(TestColumn::Name, "Alice").and(Condition::eq(TestColumn::Email, "alice@example.com"));
-        let delete = Delete::<TestEntity>::new().filter(combined);
+        let delete = Delete::<TestTable>::new().filter(combined);
         let (sql, params) = delete.build();
 
         assert!(sql.contains("WHERE ((name = ?) AND (email = ?))"));
@@ -320,7 +320,7 @@ mod tests {
     #[test]
     fn test_delete_with_or_condition() {
         let combined = Condition::eq(TestColumn::Name, "Alice").or(Condition::eq(TestColumn::Name, "Bob"));
-        let delete = Delete::<TestEntity>::new().filter(combined);
+        let delete = Delete::<TestTable>::new().filter(combined);
         let (sql, params) = delete.build();
 
         assert!(sql.contains("WHERE ((name = ?) OR (name = ?))"));
@@ -329,7 +329,7 @@ mod tests {
 
     #[test]
     fn test_delete_with_not_condition() {
-        let delete = Delete::<TestEntity>::new().filter(Condition::eq(TestColumn::Id, 1).not());
+        let delete = Delete::<TestTable>::new().filter(Condition::eq(TestColumn::Id, 1).not());
         let (sql, params) = delete.build();
 
         assert!(sql.contains("WHERE (NOT (id = ?))"));
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn test_delete_complex_query() {
-        let delete = Delete::<TestEntity>::new()
+        let delete = Delete::<TestTable>::new()
             .filter(Condition::gt(TestColumn::Id, 0))
             .filter(Condition::contains(TestColumn::Email, "@example.com"))
             .filter(Condition::is_not_null(TestColumn::Name));
@@ -353,7 +353,7 @@ mod tests {
 
     #[test]
     fn test_delete_clone() {
-        let delete = Delete::<TestEntity>::new().filter(Condition::eq(TestColumn::Id, 1));
+        let delete = Delete::<TestTable>::new().filter(Condition::eq(TestColumn::Id, 1));
         let cloned = delete.clone();
 
         let (sql1, params1) = delete.build();
@@ -365,7 +365,7 @@ mod tests {
 
     #[test]
     fn test_delete_debug() {
-        let delete = Delete::<TestEntity>::new().filter(Condition::eq(TestColumn::Id, 1));
+        let delete = Delete::<TestTable>::new().filter(Condition::eq(TestColumn::Id, 1));
         let debug = format!("{:?}", delete);
 
         assert!(debug.contains("Delete"));
@@ -373,7 +373,7 @@ mod tests {
 
     #[test]
     fn test_delete_all() {
-        let delete = Delete::<TestEntity>::new();
+        let delete = Delete::<TestTable>::new();
         let (sql, params) = delete.build();
 
         assert_eq!(sql, "DELETE FROM test_users");
@@ -383,7 +383,7 @@ mod tests {
 
     #[test]
     fn test_delete_chained_filters() {
-        let delete = Delete::<TestEntity>::new()
+        let delete = Delete::<TestTable>::new()
             .filter(Condition::eq(TestColumn::Id, 1))
             .filter(Condition::eq(TestColumn::Name, "Test"))
             .filter(Condition::is_not_null(TestColumn::Email));
@@ -395,7 +395,7 @@ mod tests {
 
     #[test]
     fn test_delete_with_raw_condition() {
-        let delete = Delete::<TestEntity>::new()
+        let delete = Delete::<TestTable>::new()
             .filter(Condition::raw("id > ? AND id < ?", vec![Value::Integer(5), Value::Integer(10)]));
         let (sql, params) = delete.build();
 

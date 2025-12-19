@@ -20,6 +20,10 @@ impl Connection {
         Self { inner, opts }
     }
 
+    pub async fn begin(&mut self) -> turso::Result<turso::transaction::Transaction<'_>> {
+        self.inner.transaction().await
+    }
+
     pub fn is_mvcc_enabled(&self) -> bool {
         self.opts.enable_mvcc
     }

@@ -6,13 +6,9 @@ use crate::error::Result;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ColumnType {
     Integer,
-
     Float,
-
     Text,
-
     Blob,
-
     Null,
 }
 

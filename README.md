@@ -10,17 +10,18 @@ tursorm = "0.0.1"
 ```
 
 **Features:**
-- `with-arrays` (default) - `Vec<T>` support for `String`, `i32`, `i64`, `f32`, `f64`, `bool`
-- `with-json` - JSON serialization with `Json<T>` wrapper
-- `with-chrono` - Date/time types
-- `with-uuid` - UUID support
+
+* `with-arrays` (default) - `Vec<T>` support for `String`, `i32`, `i64`, `f32`, `f64`, `bool`
+* `with-json` - JSON serialization with `Json<T>` wrapper
+* `with-chrono` - Date/time types
+* `with-uuid` - UUID support
 
 ## Quick Start
 
 ```rust
 use tursorm::prelude::*;
 
-#[derive(Clone, Debug, Entity)]
+#[derive(Clone, Debug, Table)]
 #[tursorm(table_name = "users")]
 pub struct User {
     #[tursorm(primary_key, auto_increment)]
@@ -34,10 +35,10 @@ async fn main() -> Result<()> {
     let db = Builder::new_local(":memory:").build().await?;
     let conn = db.connect()?;
 
-    Schema::create_table::<UserEntity>(&conn, true).await?;
+    Schema::create_table::<UserTable>(&conn, true).await?;
 
     // Insert
-    let user = User::insert(UserActiveModel {
+    let user = User::insert(UserChangeSet {
         name: set("Alice".to_string()),
         email: set("alice@example.com".to_string()),
         ..Default::default()
@@ -49,7 +50,7 @@ async fn main() -> Result<()> {
         .all(&conn).await?;
 
     // Update
-    let mut update: UserActiveModel = user.clone().into();
+    let mut update: UserChangeSet = user.clone().into();
     update.name = set("Alice Smith".to_string());
     User::update(update).exec(&conn).await?;
 
@@ -60,10 +61,10 @@ async fn main() -> Result<()> {
 }
 ```
 
-## Entity Definition
+## Table Definition
 
 ```rust
-#[derive(Clone, Debug, Entity)]
+#[derive(Clone, Debug, Table)]
 #[tursorm(table_name = "products")]
 pub struct Product {
     #[tursorm(primary_key, auto_increment)]
@@ -85,7 +86,7 @@ pub struct Product {
 * `column_name` (field) - Custom column name
 * `unique` (field) - Unique constraint
 
-The macro generates `ProductEntity`, `ProductColumn`, and `ProductActiveModel`.
+The macro generates `ProductTable`, `ProductColumn`, and `ProductChangeSet`.
 
 ## Queries
 
@@ -110,21 +111,21 @@ let exists = User::find().filter(...).exists(&conn).await?;
 ### Insert
 
 ```rust
-let affected = User::insert(model).exec(&conn).await?;
-let user = User::insert(model).exec_with_returning(&conn).await?;
-let id = User::insert(model).exec_with_last_insert_id(&conn).await?;
+let affected = User::insert(change_set).exec(&conn).await?;
+let user = User::insert(change_set).exec_with_returning(&conn).await?;
+let id = User::insert(change_set).exec_with_last_insert_id(&conn).await?;
 
-InsertMany::<UserEntity>::new(vec![model1, model2]).exec(&conn).await?;
+InsertMany::<UserTable>::new(vec![change_set1, change_set2]).exec(&conn).await?;
 ```
 
 ### Update
 
 ```rust
-let mut update: UserActiveModel = user.into();
+let mut update: UserChangeSet = user.into();
 update.name = set("New Name".to_string());
 User::update(update).exec(&conn).await?;
 
-Update::<UserEntity>::many()
+Update::<UserTable>::many()
     .set(UserColumn::Status, "inactive")
     .filter(Condition::lt(UserColumn::LastLogin, cutoff))
     .exec(&conn).await?;
@@ -135,7 +136,7 @@ Update::<UserEntity>::many()
 ```rust
 User::delete_by_id(1).exec(&conn).await?;
 
-Delete::<UserEntity>::new()
+Delete::<UserTable>::new()
     .filter(Condition::eq(UserColumn::Status, "deleted"))
     .exec(&conn).await?;
 ```
@@ -167,16 +168,16 @@ cond.not()
 ## Schema & Migrations
 
 ```rust
-Schema::create_table::<UserEntity>(&conn, true).await?;
-Schema::drop_table::<UserEntity>(&conn, true).await?;
-Schema::table_exists::<UserEntity>(&conn).await?;
+Schema::create_table::<UserTable>(&conn, true).await?;
+Schema::drop_table::<UserTable>(&conn, true).await?;
+Schema::table_exists::<UserTable>(&conn).await?;
 
 // Auto-migration
 use tursorm::migration::{Migrator, MigrationOptions};
 
-Migrator::migrate::<UserEntity>(&conn).await?;
+Migrator::migrate::<UserTable>(&conn).await?;
 
-Migrator::migrate_with_options::<UserEntity>(&conn, MigrationOptions {
+Migrator::migrate_with_options::<UserTable>(&conn, MigrationOptions {
     allow_drop_columns: false,
     dry_run: true,
     verbose: true,
@@ -207,11 +208,11 @@ let conn = db.connect()?;
 | `f32`, `f64` | REAL |
 | `String`, `&str` | TEXT |
 | `Vec<u8>` | BLOB |
-| `Vec<T>`* | TEXT (JSON array) |
+| `Vec<T>`\* | TEXT (JSON array) |
 | `bool` | INTEGER (0/1) |
 | `Option<T>` | NULL when None |
 
-*`Vec<T>` supported for `String`, `i32`, `i64`, `f32`, `f64`, `bool` (requires `with-arrays` feature, enabled by default)
+\*`Vec<T>` supported for `String`, `i32`, `i64`, `f32`, `f64`, `bool` (requires `with-arrays` feature, enabled by default)
 
 ## License
 

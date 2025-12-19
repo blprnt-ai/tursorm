@@ -9,7 +9,7 @@ use crate::OnDelete;
 use crate::OnUpdate;
 use crate::error::Result;
 use crate::traits::column::ColumnTrait;
-use crate::traits::entity::EntityTrait;
+use crate::traits::table::TableTrait;
 use crate::value::ColumnType;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -204,13 +204,13 @@ impl Default for MigrationOptions {
     }
 }
 
-pub struct EntitySchema {
+pub struct TableSchema {
     table_name: &'static str,
-    columns:    Vec<EntityColumnInfo>,
+    columns:    Vec<TableColumnInfo>,
 }
 
 #[derive(Debug, Clone)]
-pub struct EntityColumnInfo {
+pub struct TableColumnInfo {
     pub name:              &'static str,
     pub column_type:       ColumnType,
     pub nullable:          bool,
@@ -223,12 +223,12 @@ pub struct EntityColumnInfo {
     pub foreign_key:  Option<ForeignKeyInfo>,
 }
 
-impl EntitySchema {
-    pub fn of<E: EntityTrait>() -> Self
+impl TableSchema {
+    pub fn of<E: TableTrait>() -> Self
     where E::Column: 'static {
         let columns = E::Column::all()
             .iter()
-            .map(|col| EntityColumnInfo {
+            .map(|col| TableColumnInfo {
                 name:              col.name(),
                 column_type:       col.column_type(),
                 nullable:          col.is_nullable(),
@@ -248,7 +248,7 @@ impl EntitySchema {
         self.table_name
     }
 
-    pub fn columns(&self) -> &[EntityColumnInfo] {
+    pub fn columns(&self) -> &[TableColumnInfo] {
         &self.columns
     }
 }
@@ -256,29 +256,29 @@ impl EntitySchema {
 pub struct Migrator;
 
 impl Migrator {
-    pub async fn migrate<E: EntityTrait>(conn: &crate::Connection) -> Result<SchemaDiff>
+    pub async fn migrate<E: TableTrait>(conn: &crate::Connection) -> Result<SchemaDiff>
     where E::Column: 'static {
         Self::migrate_with_options::<E>(conn, MigrationOptions::default()).await
     }
 
-    pub async fn migrate_with_options<E: EntityTrait>(
+    pub async fn migrate_with_options<E: TableTrait>(
         conn: &crate::Connection,
         options: MigrationOptions,
     ) -> Result<SchemaDiff>
     where
         E::Column: 'static,
     {
-        let schema = EntitySchema::of::<E>();
+        let schema = TableSchema::of::<E>();
         Self::migrate_schema(conn, &schema, &options).await
     }
 
-    pub async fn migrate_all(conn: &crate::Connection, schemas: &[EntitySchema]) -> Result<SchemaDiff> {
+    pub async fn migrate_all(conn: &crate::Connection, schemas: &[TableSchema]) -> Result<SchemaDiff> {
         Self::migrate_all_with_options(conn, schemas, MigrationOptions::default()).await
     }
 
     pub async fn migrate_all_with_options(
         conn: &crate::Connection,
-        schemas: &[EntitySchema],
+        schemas: &[TableSchema],
         options: MigrationOptions,
     ) -> Result<SchemaDiff> {
         let mut combined_diff = SchemaDiff::empty();
@@ -357,15 +357,15 @@ impl Migrator {
         Ok(Some(DbTableInfo { name: table_name.to_string(), columns, primary_keys }))
     }
 
-    pub async fn diff<E: EntityTrait>(conn: &crate::Connection) -> Result<SchemaDiff>
+    pub async fn diff<E: TableTrait>(conn: &crate::Connection) -> Result<SchemaDiff>
     where E::Column: 'static {
-        let schema = EntitySchema::of::<E>();
+        let schema = TableSchema::of::<E>();
         Self::diff_schema(conn, &schema, &MigrationOptions::default()).await
     }
 
     async fn diff_schema(
         conn: &crate::Connection,
-        entity_schema: &EntitySchema,
+        entity_schema: &TableSchema,
         options: &MigrationOptions,
     ) -> Result<SchemaDiff> {
         let mut diff = SchemaDiff::empty();
@@ -382,7 +382,7 @@ impl Migrator {
                 let db_columns: HashMap<&str, &DbColumnInfo> =
                     db_info.columns.iter().map(|c| (c.name.as_str(), c)).collect();
 
-                let entity_columns: HashMap<&str, &EntityColumnInfo> =
+                let entity_columns: HashMap<&str, &TableColumnInfo> =
                     entity_schema.columns.iter().map(|c| (c.name, c)).collect();
 
                 let mut renamed_old_columns: std::collections::HashSet<&str> = std::collections::HashSet::new();
@@ -480,7 +480,7 @@ impl Migrator {
 
     async fn migrate_schema(
         conn: &crate::Connection,
-        entity_schema: &EntitySchema,
+        entity_schema: &TableSchema,
         options: &MigrationOptions,
     ) -> Result<SchemaDiff> {
         let diff = Self::diff_schema(conn, entity_schema, options).await?;
@@ -521,7 +521,7 @@ impl Migrator {
         }
     }
 
-    fn generate_create_table_sql(schema: &EntitySchema) -> String {
+    fn generate_create_table_sql(schema: &TableSchema) -> String {
         let mut column_defs = Vec::new();
         let mut primary_keys = Vec::new();
 
@@ -561,7 +561,7 @@ impl Migrator {
         format!("CREATE TABLE {} ({})", schema.table_name, column_defs.join(", "))
     }
 
-    fn generate_create_foreign_key_changes(schema: &EntitySchema) -> Vec<String> {
+    fn generate_create_foreign_key_changes(schema: &TableSchema) -> Vec<String> {
         schema
             .columns
             .iter()
@@ -570,7 +570,7 @@ impl Migrator {
             .collect()
     }
 
-    fn generate_create_foreign_key_sql_from_column(col: &EntityColumnInfo) -> String {
+    fn generate_create_foreign_key_sql_from_column(col: &TableColumnInfo) -> String {
         let foreign_key_info = col.foreign_key.as_ref().unwrap();
         let base_sql = format!("FOREIGN KEY ({}) REFERENCES {}", col.name, foreign_key_info.table_name);
 
@@ -593,7 +593,7 @@ impl Migrator {
         format!("{} {} {}", base_sql, on_delete, on_update)
     }
 
-    fn generate_add_column_sql(table_name: &str, col: &EntityColumnInfo) -> String {
+    fn generate_add_column_sql(table_name: &str, col: &TableColumnInfo) -> String {
         let mut def =
             format!("ALTER TABLE {} ADD COLUMN {} {}", table_name, col.name, column_type_to_sql(col.column_type));
 
@@ -617,7 +617,7 @@ impl Migrator {
         def
     }
 
-    fn check_column_compatibility(entity_col: &EntityColumnInfo, db_col: &DbColumnInfo) -> Option<String> {
+    fn check_column_compatibility(entity_col: &TableColumnInfo, db_col: &DbColumnInfo) -> Option<String> {
         let entity_type = column_type_to_sql(entity_col.column_type).to_uppercase();
         let db_type = db_col.column_type.to_uppercase();
 
@@ -938,7 +938,7 @@ mod tests {
 
     #[test]
     fn test_entity_column_info_clone() {
-        let col = EntityColumnInfo {
+        let col = TableColumnInfo {
             name:              "id",
             column_type:       ColumnType::Integer,
             nullable:          false,
@@ -956,7 +956,7 @@ mod tests {
 
     #[test]
     fn test_entity_column_info_debug() {
-        let col = EntityColumnInfo {
+        let col = TableColumnInfo {
             name:              "email",
             column_type:       ColumnType::Text,
             nullable:          true,
@@ -983,10 +983,10 @@ mod tests {
 
     #[test]
     fn test_generate_create_table_sql_basic() {
-        let schema = EntitySchema {
+        let schema = TableSchema {
             table_name: "users",
             columns:    vec![
-                EntityColumnInfo {
+                TableColumnInfo {
                     name:              "id",
                     column_type:       ColumnType::Integer,
                     nullable:          false,
@@ -997,7 +997,7 @@ mod tests {
                     renamed_from:      None,
                     foreign_key:       None,
                 },
-                EntityColumnInfo {
+                TableColumnInfo {
                     name:              "name",
                     column_type:       ColumnType::Text,
                     nullable:          false,
@@ -1019,10 +1019,10 @@ mod tests {
 
     #[test]
     fn test_generate_create_table_sql_with_unique() {
-        let schema = EntitySchema {
+        let schema = TableSchema {
             table_name: "users",
             columns:    vec![
-                EntityColumnInfo {
+                TableColumnInfo {
                     name:              "id",
                     column_type:       ColumnType::Integer,
                     nullable:          false,
@@ -1033,7 +1033,7 @@ mod tests {
                     renamed_from:      None,
                     foreign_key:       None,
                 },
-                EntityColumnInfo {
+                TableColumnInfo {
                     name:              "email",
                     column_type:       ColumnType::Text,
                     nullable:          false,
@@ -1053,10 +1053,10 @@ mod tests {
 
     #[test]
     fn test_generate_create_table_sql_with_default() {
-        let schema = EntitySchema {
+        let schema = TableSchema {
             table_name: "users",
             columns:    vec![
-                EntityColumnInfo {
+                TableColumnInfo {
                     name:              "id",
                     column_type:       ColumnType::Integer,
                     nullable:          false,
@@ -1067,7 +1067,7 @@ mod tests {
                     renamed_from:      None,
                     foreign_key:       None,
                 },
-                EntityColumnInfo {
+                TableColumnInfo {
                     name:              "status",
                     column_type:       ColumnType::Text,
                     nullable:          false,
@@ -1087,10 +1087,10 @@ mod tests {
 
     #[test]
     fn test_generate_create_table_sql_nullable() {
-        let schema = EntitySchema {
+        let schema = TableSchema {
             table_name: "users",
             columns:    vec![
-                EntityColumnInfo {
+                TableColumnInfo {
                     name:              "id",
                     column_type:       ColumnType::Integer,
                     nullable:          false,
@@ -1101,7 +1101,7 @@ mod tests {
                     renamed_from:      None,
                     foreign_key:       None,
                 },
-                EntityColumnInfo {
+                TableColumnInfo {
                     name:              "bio",
                     column_type:       ColumnType::Text,
                     nullable:          true,
@@ -1122,9 +1122,9 @@ mod tests {
 
     #[test]
     fn test_generate_create_table_sql_non_auto_pk() {
-        let schema = EntitySchema {
+        let schema = TableSchema {
             table_name: "users",
-            columns:    vec![EntityColumnInfo {
+            columns:    vec![TableColumnInfo {
                 name:              "id",
                 column_type:       ColumnType::Integer,
                 nullable:          false,
@@ -1144,7 +1144,7 @@ mod tests {
 
     #[test]
     fn test_generate_add_column_sql_not_null_with_default() {
-        let col = EntityColumnInfo {
+        let col = TableColumnInfo {
             name:              "status",
             column_type:       ColumnType::Text,
             nullable:          false,
@@ -1162,7 +1162,7 @@ mod tests {
 
     #[test]
     fn test_generate_add_column_sql_not_null_without_default() {
-        let col = EntityColumnInfo {
+        let col = TableColumnInfo {
             name:              "name",
             column_type:       ColumnType::Text,
             nullable:          false,
@@ -1181,7 +1181,7 @@ mod tests {
 
     #[test]
     fn test_generate_add_column_sql_nullable() {
-        let col = EntityColumnInfo {
+        let col = TableColumnInfo {
             name:              "bio",
             column_type:       ColumnType::Text,
             nullable:          true,
@@ -1200,7 +1200,7 @@ mod tests {
 
     #[test]
     fn test_generate_add_column_sql_integer_default() {
-        let col = EntityColumnInfo {
+        let col = TableColumnInfo {
             name:              "count",
             column_type:       ColumnType::Integer,
             nullable:          false,
@@ -1218,7 +1218,7 @@ mod tests {
 
     #[test]
     fn test_generate_add_column_sql_float_default() {
-        let col = EntityColumnInfo {
+        let col = TableColumnInfo {
             name:              "rating",
             column_type:       ColumnType::Float,
             nullable:          false,
@@ -1236,7 +1236,7 @@ mod tests {
 
     #[test]
     fn test_generate_add_column_sql_blob_default() {
-        let col = EntityColumnInfo {
+        let col = TableColumnInfo {
             name:              "data",
             column_type:       ColumnType::Blob,
             nullable:          false,
@@ -1254,7 +1254,7 @@ mod tests {
 
     #[test]
     fn test_check_column_compatibility_same_type() {
-        let entity_col = EntityColumnInfo {
+        let entity_col = TableColumnInfo {
             name:              "id",
             column_type:       ColumnType::Integer,
             nullable:          false,
@@ -1279,7 +1279,7 @@ mod tests {
 
     #[test]
     fn test_check_column_compatibility_type_mismatch() {
-        let entity_col = EntityColumnInfo {
+        let entity_col = TableColumnInfo {
             name:              "age",
             column_type:       ColumnType::Integer,
             nullable:          false,
@@ -1305,7 +1305,7 @@ mod tests {
 
     #[test]
     fn test_check_column_compatibility_nullable_mismatch() {
-        let entity_col = EntityColumnInfo {
+        let entity_col = TableColumnInfo {
             name:              "email",
             column_type:       ColumnType::Text,
             nullable:          false,
@@ -1331,7 +1331,7 @@ mod tests {
 
     #[test]
     fn test_check_column_compatibility_compatible_types() {
-        let entity_col = EntityColumnInfo {
+        let entity_col = TableColumnInfo {
             name:              "id",
             column_type:       ColumnType::Integer,
             nullable:          false,
@@ -1356,7 +1356,7 @@ mod tests {
 
     #[test]
     fn test_check_column_compatibility_varchar() {
-        let entity_col = EntityColumnInfo {
+        let entity_col = TableColumnInfo {
             name:              "name",
             column_type:       ColumnType::Text,
             nullable:          false,
@@ -1381,16 +1381,16 @@ mod tests {
 
     #[test]
     fn test_entity_schema_table_name() {
-        let schema = EntitySchema { table_name: "my_table", columns: vec![] };
+        let schema = TableSchema { table_name: "my_table", columns: vec![] };
         assert_eq!(schema.table_name(), "my_table");
     }
 
     #[test]
     fn test_entity_schema_columns() {
-        let schema = EntitySchema {
+        let schema = TableSchema {
             table_name: "users",
             columns:    vec![
-                EntityColumnInfo {
+                TableColumnInfo {
                     name:              "id",
                     column_type:       ColumnType::Integer,
                     nullable:          false,
@@ -1401,7 +1401,7 @@ mod tests {
                     renamed_from:      None,
                     foreign_key:       None,
                 },
-                EntityColumnInfo {
+                TableColumnInfo {
                     name:              "name",
                     column_type:       ColumnType::Text,
                     nullable:          false,

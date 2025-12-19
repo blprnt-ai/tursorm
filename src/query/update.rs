@@ -1,34 +1,34 @@
 use std::marker::PhantomData;
 
-use crate::ActiveModelTrait;
+use crate::ChangeSetTrait;
 use crate::ColumnTrait;
 use crate::Condition;
-use crate::EntityTrait;
 use crate::Error;
 use crate::FromRow;
 use crate::IntoValue;
 use crate::Result;
+use crate::TableTrait;
 use crate::Value;
 
 #[derive(Clone, Debug)]
-pub struct Update<E: EntityTrait> {
-    model:      Option<E::ActiveModel>,
-    sets:       Vec<(String, Value)>,
+pub struct Update<Table: TableTrait> {
+    change_set: Option<Table::ChangeSet>,
+    changes:    Vec<(String, Value)>,
     conditions: Vec<Condition>,
-    _entity:    PhantomData<E>,
+    _table:     PhantomData<Table>,
 }
 
-impl<E: EntityTrait> Update<E> {
-    pub fn new(model: E::ActiveModel) -> Self {
-        Self { model: Some(model), sets: Vec::new(), conditions: Vec::new(), _entity: PhantomData }
+impl<Table: TableTrait> Update<Table> {
+    pub fn new(change_set: Table::ChangeSet) -> Self {
+        Self { change_set: Some(change_set), changes: Vec::new(), conditions: Vec::new(), _table: PhantomData }
     }
 
     pub fn many() -> Self {
-        Self { model: None, sets: Vec::new(), conditions: Vec::new(), _entity: PhantomData }
+        Self { change_set: None, changes: Vec::new(), conditions: Vec::new(), _table: PhantomData }
     }
 
-    pub fn set<C: ColumnTrait, V: IntoValue>(mut self, column: C, value: V) -> Self {
-        self.sets.push((column.name().to_string(), value.into_value()));
+    pub fn set<Column: ColumnTrait, Value: IntoValue>(mut self, column: Column, value: Value) -> Self {
+        self.changes.push((column.name().to_string(), value.into_value()));
         self
     }
 
@@ -41,15 +41,15 @@ impl<E: EntityTrait> Update<E> {
         let mut set_parts = Vec::new();
         let mut params = Vec::new();
 
-        if let Some(ref model) = self.model {
-            let model_sets = model.get_update_sets();
-            for (col, val) in model_sets {
+        if let Some(ref change_set) = self.change_set {
+            let change_set_changes = change_set.get_update_sets();
+            for (col, val) in change_set_changes {
                 set_parts.push(format!("{} = ?", col));
                 params.push(val);
             }
         }
 
-        for (col, val) in &self.sets {
+        for (col, val) in &self.changes {
             set_parts.push(format!("{} = ?", col));
             params.push(val.clone());
         }
@@ -58,13 +58,13 @@ impl<E: EntityTrait> Update<E> {
             return Err(Error::Query("No columns to update".to_string()));
         }
 
-        let mut sql = format!("UPDATE {} SET {}", E::table_name(), set_parts.join(", "));
+        let mut sql = format!("UPDATE {} SET {}", Table::table_name(), set_parts.join(", "));
 
         let mut where_conditions = self.conditions.clone();
 
-        if let Some(ref model) = self.model {
-            if let Some(pk_value) = model.get_primary_key_value() {
-                let pk_column = E::ActiveModel::primary_key_column();
+        if let Some(ref change_set) = self.change_set {
+            if let Some(pk_value) = change_set.get_primary_key_value() {
+                let pk_column = Table::ChangeSet::primary_key_column();
                 where_conditions.push(Condition::raw(format!("{} = ?", pk_column), vec![pk_value]));
             } else if self.conditions.is_empty() {
                 return Err(Error::PrimaryKeyNotSet);
@@ -91,18 +91,18 @@ impl<E: EntityTrait> Update<E> {
         Ok(affected)
     }
 
-    pub async fn exec_with_returning(self, conn: &crate::Connection) -> Result<E::Model> {
+    pub async fn exec_with_returning(self, conn: &crate::Connection) -> Result<Table::Record> {
         let (base_sql, params) = self.build()?;
-        let sql = format!("{} RETURNING {}", base_sql, E::all_columns());
+        let sql = format!("{} RETURNING {}", base_sql, Table::all_columns());
 
         let params: Vec<turso::Value> = params.into_iter().collect();
         let mut rows = conn.query(&sql, params).await?;
 
-        if let Some(row) = rows.next().await? { E::Model::from_row(&row) } else { Err(Error::NoRowsAffected) }
+        if let Some(row) = rows.next().await? { Table::Record::from_row(&row) } else { Err(Error::NoRowsAffected) }
     }
 }
 
-impl<E: EntityTrait> Default for Update<E> {
+impl<Table: TableTrait> Default for Update<Table> {
     fn default() -> Self {
         Self::many()
     }
@@ -111,51 +111,51 @@ impl<E: EntityTrait> Default for Update<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ActiveValue;
     use crate::ColumnType;
+    use crate::FieldValue;
     use crate::FromRow;
-    use crate::ModelTrait;
-    use crate::set;
+    use crate::RecordTrait;
+    use crate::change;
 
     #[derive(Clone, Debug, PartialEq)]
-    struct TestModel {
+    struct TestRecord {
         id:    i64,
         name:  String,
         email: String,
     }
 
-    impl ModelTrait for TestModel {
-        type Entity = TestEntity;
+    impl RecordTrait for TestRecord {
+        type Table = TestTable;
 
         fn get_primary_key_value(&self) -> Value {
             Value::Integer(self.id)
         }
     }
 
-    impl FromRow for TestModel {
+    impl FromRow for TestRecord {
         fn from_row(_row: &turso::Row) -> crate::error::Result<Self> {
-            Ok(TestModel { id: 1, name: "test".to_string(), email: "test@test.com".to_string() })
+            Ok(TestRecord { id: 1, name: "test".to_string(), email: "test@test.com".to_string() })
         }
     }
 
     #[derive(Clone, Debug, Default)]
-    struct TestActiveModel {
-        id:    ActiveValue<i64>,
-        name:  ActiveValue<String>,
-        email: ActiveValue<String>,
+    struct TestChangeSet {
+        id:    FieldValue<i64>,
+        name:  FieldValue<String>,
+        email: FieldValue<String>,
     }
 
-    impl ActiveModelTrait for TestActiveModel {
-        type Entity = TestEntity;
+    impl ChangeSetTrait for TestChangeSet {
+        type Table = TestTable;
 
         fn get_insert_columns_and_values(&self) -> (Vec<&'static str>, Vec<Value>) {
             let mut columns = Vec::new();
             let mut values = Vec::new();
-            if self.name.is_set() {
+            if self.name.is_changed() {
                 columns.push("name");
                 values.push(Value::Text(self.name.clone().take().unwrap()));
             }
-            if self.email.is_set() {
+            if self.email.is_changed() {
                 columns.push("email");
                 values.push(Value::Text(self.email.clone().take().unwrap()));
             }
@@ -164,10 +164,10 @@ mod tests {
 
         fn get_update_sets(&self) -> Vec<(&'static str, Value)> {
             let mut sets = Vec::new();
-            if self.name.is_set() {
+            if self.name.is_changed() {
                 sets.push(("name", Value::Text(self.name.clone().take().unwrap())));
             }
-            if self.email.is_set() {
+            if self.email.is_changed() {
                 sets.push(("email", Value::Text(self.email.clone().take().unwrap())));
             }
             sets
@@ -217,12 +217,12 @@ mod tests {
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestEntity;
+    struct TestTable;
 
-    impl EntityTrait for TestEntity {
-        type ActiveModel = TestActiveModel;
+    impl TableTrait for TestTable {
+        type ChangeSet = TestChangeSet;
         type Column = TestColumn;
-        type Model = TestModel;
+        type Record = TestRecord;
 
         fn table_name() -> &'static str {
             "test_users"
@@ -246,9 +246,10 @@ mod tests {
     }
 
     #[test]
-    fn test_update_new_with_model() {
-        let model = TestActiveModel { id: set(1), name: set("Updated Name".to_string()), ..Default::default() };
-        let update = Update::<TestEntity>::new(model);
+    fn test_update_new_with_change_set() {
+        let change_set =
+            TestChangeSet { id: change(1), name: change("Updated Name".to_string()), ..Default::default() };
+        let update = Update::<TestTable>::new(change_set);
         let result = update.build();
 
         assert!(result.is_ok());
@@ -262,7 +263,7 @@ mod tests {
 
     #[test]
     fn test_update_many() {
-        let update = Update::<TestEntity>::many()
+        let update = Update::<TestTable>::many()
             .set(TestColumn::Name, "Anonymous")
             .filter(Condition::is_null(TestColumn::Email));
         let result = update.build();
@@ -276,7 +277,7 @@ mod tests {
 
     #[test]
     fn test_update_set() {
-        let update = Update::<TestEntity>::many()
+        let update = Update::<TestTable>::many()
             .set(TestColumn::Name, "New Name")
             .set(TestColumn::Email, "new@email.com")
             .filter(Condition::eq(TestColumn::Id, 1));
@@ -292,7 +293,7 @@ mod tests {
     #[test]
     fn test_update_filter() {
         let update =
-            Update::<TestEntity>::many().set(TestColumn::Name, "Test").filter(Condition::gt(TestColumn::Id, 10));
+            Update::<TestTable>::many().set(TestColumn::Name, "Test").filter(Condition::gt(TestColumn::Id, 10));
         let result = update.build();
 
         assert!(result.is_ok());
@@ -302,7 +303,7 @@ mod tests {
 
     #[test]
     fn test_update_multiple_filters() {
-        let update = Update::<TestEntity>::many()
+        let update = Update::<TestTable>::many()
             .set(TestColumn::Name, "Test")
             .filter(Condition::gt(TestColumn::Id, 10))
             .filter(Condition::is_not_null(TestColumn::Email));
@@ -318,25 +319,25 @@ mod tests {
 
     #[test]
     fn test_update_no_columns_error() {
-        let update = Update::<TestEntity>::many().filter(Condition::eq(TestColumn::Id, 1));
+        let update = Update::<TestTable>::many().filter(Condition::eq(TestColumn::Id, 1));
         let result = update.build();
 
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_update_model_without_pk_error() {
-        let model = TestActiveModel { name: set("Test".to_string()), ..Default::default() };
-        let update = Update::<TestEntity>::new(model);
+    fn test_update_change_set_without_pk_error() {
+        let change_set = TestChangeSet { name: change("Test".to_string()), ..Default::default() };
+        let update = Update::<TestTable>::new(change_set);
         let result = update.build();
 
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_update_model_without_pk_but_with_filter() {
-        let model = TestActiveModel { name: set("Test".to_string()), ..Default::default() };
-        let update = Update::<TestEntity>::new(model).filter(Condition::eq(TestColumn::Id, 1));
+    fn test_update_change_set_without_pk_but_with_filter() {
+        let change_set = TestChangeSet { name: change("Test".to_string()), ..Default::default() };
+        let update = Update::<TestTable>::new(change_set).filter(Condition::eq(TestColumn::Id, 1));
         let result = update.build();
 
         assert!(result.is_ok());
@@ -344,15 +345,14 @@ mod tests {
 
     #[test]
     fn test_update_default() {
-        let update = Update::<TestEntity>::default();
+        let update = Update::<TestTable>::default();
 
         assert!(format!("{:?}", update).contains("Update"));
     }
 
     #[test]
     fn test_update_clone() {
-        let update =
-            Update::<TestEntity>::many().set(TestColumn::Name, "Test").filter(Condition::eq(TestColumn::Id, 1));
+        let update = Update::<TestTable>::many().set(TestColumn::Name, "Test").filter(Condition::eq(TestColumn::Id, 1));
         let cloned = update.clone();
 
         let (sql1, params1) = update.build().unwrap();
@@ -364,19 +364,19 @@ mod tests {
 
     #[test]
     fn test_update_debug() {
-        let update = Update::<TestEntity>::many().set(TestColumn::Name, "Test");
+        let update = Update::<TestTable>::many().set(TestColumn::Name, "Test");
         let debug = format!("{:?}", update);
         assert!(debug.contains("Update"));
     }
 
     #[test]
-    fn test_update_model_all_fields() {
-        let model = TestActiveModel {
-            id:    set(1),
-            name:  set("Alice".to_string()),
-            email: set("alice@example.com".to_string()),
+    fn test_update_change_set_all_fields() {
+        let change_set = TestChangeSet {
+            id:    change(1),
+            name:  change("Alice".to_string()),
+            email: change("alice@example.com".to_string()),
         };
-        let update = Update::<TestEntity>::new(model);
+        let update = Update::<TestTable>::new(change_set);
         let result = update.build();
 
         assert!(result.is_ok());
@@ -388,9 +388,9 @@ mod tests {
     }
 
     #[test]
-    fn test_update_model_with_additional_sets() {
-        let model = TestActiveModel { id: set(1), name: set("Alice".to_string()), ..Default::default() };
-        let update = Update::<TestEntity>::new(model).set(TestColumn::Email, "alice@new.com");
+    fn test_update_change_set_with_additional_sets() {
+        let change_set = TestChangeSet { id: change(1), name: change("Alice".to_string()), ..Default::default() };
+        let update = Update::<TestTable>::new(change_set).set(TestColumn::Email, "alice@new.com");
         let result = update.build();
 
         assert!(result.is_ok());
@@ -402,7 +402,7 @@ mod tests {
 
     #[test]
     fn test_update_with_complex_condition() {
-        let update = Update::<TestEntity>::many()
+        let update = Update::<TestTable>::many()
             .set(TestColumn::Name, "Updated")
             .filter(Condition::eq(TestColumn::Id, 1).and(Condition::is_not_null(TestColumn::Email)));
         let result = update.build();
@@ -415,7 +415,7 @@ mod tests {
 
     #[test]
     fn test_update_with_in_condition() {
-        let update = Update::<TestEntity>::many()
+        let update = Update::<TestTable>::many()
             .set(TestColumn::Name, "Batch Updated")
             .filter(Condition::is_in(TestColumn::Id, vec![1, 2, 3]));
         let result = update.build();

@@ -1,18 +1,18 @@
 use crate::ColumnTrait;
-use crate::EntityTrait;
 use crate::Result;
+use crate::TableTrait;
 
 pub struct MigrationSchema;
 
 impl MigrationSchema {
-    pub async fn create_table<E: EntityTrait>(conn: &crate::Connection, if_not_exists: bool) -> Result<()>
+    pub async fn create_table<E: TableTrait>(conn: &crate::Connection, if_not_exists: bool) -> Result<()>
     where E::Column: 'static {
         let sql = Self::create_table_sql::<E>(if_not_exists);
         conn.execute(&sql, ()).await?;
         Ok(())
     }
 
-    pub fn create_table_sql<E: EntityTrait>(if_not_exists: bool) -> String
+    pub fn create_table_sql<E: TableTrait>(if_not_exists: bool) -> String
     where E::Column: 'static {
         let exists_clause = if if_not_exists { "IF NOT EXISTS " } else { "" };
 
@@ -64,18 +64,18 @@ impl MigrationSchema {
         format!("CREATE TABLE {}{} (\n  {}\n)", exists_clause, E::table_name(), column_defs.join(",\n  "))
     }
 
-    pub async fn drop_table<E: EntityTrait>(conn: &crate::Connection, if_exists: bool) -> Result<()> {
+    pub async fn drop_table<E: TableTrait>(conn: &crate::Connection, if_exists: bool) -> Result<()> {
         let sql = Self::drop_table_sql::<E>(if_exists);
         conn.execute(&sql, ()).await?;
         Ok(())
     }
 
-    pub fn drop_table_sql<E: EntityTrait>(if_exists: bool) -> String {
+    pub fn drop_table_sql<E: TableTrait>(if_exists: bool) -> String {
         let exists_clause = if if_exists { "IF EXISTS " } else { "" };
         format!("DROP TABLE {}{}", exists_clause, E::table_name())
     }
 
-    pub async fn table_exists<E: EntityTrait>(conn: &crate::Connection) -> Result<bool> {
+    pub async fn table_exists<E: TableTrait>(conn: &crate::Connection) -> Result<bool> {
         let sql = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?";
 
         let mut rows = conn.query(sql, [E::table_name()]).await?;
@@ -105,8 +105,8 @@ fn column_type_to_sql(col_type: crate::value::ColumnType) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ActiveModelTrait;
-    use crate::ActiveValue;
+    use crate::ChangeSetTrait;
+    use crate::FieldValue;
     use crate::FromRow;
     use crate::Value;
     use crate::value::ColumnType;
@@ -141,46 +141,46 @@ mod tests {
     }
 
     #[derive(Clone, Debug, PartialEq)]
-    struct TestModel {
+    struct TestRecord {
         id:    i64,
         name:  String,
         email: Option<String>,
         age:   i64,
     }
 
-    impl crate::ModelTrait for TestModel {
-        type Entity = TestEntity;
+    impl crate::RecordTrait for TestRecord {
+        type Table = TestTable;
 
         fn get_primary_key_value(&self) -> Value {
             Value::Integer(self.id)
         }
     }
 
-    impl FromRow for TestModel {
+    impl FromRow for TestRecord {
         fn from_row(_row: &turso::Row) -> crate::error::Result<Self> {
-            Ok(TestModel { id: 1, name: "test".to_string(), email: Some("test@test.com".to_string()), age: 25 })
+            Ok(TestRecord { id: 1, name: "test".to_string(), email: Some("test@test.com".to_string()), age: 25 })
         }
     }
 
     #[derive(Clone, Debug, Default)]
-    struct TestActiveModel {
-        id:    ActiveValue<i64>,
-        name:  ActiveValue<String>,
-        email: ActiveValue<Option<String>>,
-        age:   ActiveValue<i64>,
+    struct TestChangeSet {
+        id:    FieldValue<i64>,
+        name:  FieldValue<String>,
+        email: FieldValue<Option<String>>,
+        age:   FieldValue<i64>,
     }
 
-    impl ActiveModelTrait for TestActiveModel {
-        type Entity = TestEntity;
+    impl ChangeSetTrait for TestChangeSet {
+        type Table = TestTable;
 
         fn get_insert_columns_and_values(&self) -> (Vec<&'static str>, Vec<Value>) {
             let mut columns = Vec::new();
             let mut values = Vec::new();
-            if self.name.is_set() {
+            if self.name.is_changed() {
                 columns.push("name");
                 values.push(Value::Text(self.name.clone().take().unwrap()));
             }
-            if self.email.is_set() {
+            if self.email.is_changed() {
                 columns.push("email");
                 if let Some(email) = self.email.clone().take().unwrap() {
                     values.push(Value::Text(email));
@@ -188,7 +188,7 @@ mod tests {
                     values.push(Value::Null);
                 }
             }
-            if self.age.is_set() {
+            if self.age.is_changed() {
                 columns.push("age");
                 values.push(Value::Integer(self.age.clone().take().unwrap()));
             }
@@ -197,17 +197,17 @@ mod tests {
 
         fn get_update_sets(&self) -> Vec<(&'static str, Value)> {
             let mut sets = Vec::new();
-            if self.name.is_set() {
+            if self.name.is_changed() {
                 sets.push(("name", Value::Text(self.name.clone().take().unwrap())));
             }
-            if self.email.is_set() {
+            if self.email.is_changed() {
                 if let Some(email) = self.email.clone().take().unwrap() {
                     sets.push(("email", Value::Text(email)));
                 } else {
                     sets.push(("email", Value::Null));
                 }
             }
-            if self.age.is_set() {
+            if self.age.is_changed() {
                 sets.push(("age", Value::Integer(self.age.clone().take().unwrap())));
             }
             sets
@@ -271,12 +271,12 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct TestEntity;
+    struct TestTable;
 
-    impl crate::EntityTrait for TestEntity {
-        type ActiveModel = TestActiveModel;
+    impl crate::TableTrait for TestTable {
+        type ChangeSet = TestChangeSet;
         type Column = TestColumn;
-        type Model = TestModel;
+        type Record = TestRecord;
 
         fn table_name() -> &'static str {
             "test_users"
@@ -301,7 +301,7 @@ mod tests {
 
     #[test]
     fn test_schema_create_table_sql_basic() {
-        let sql = MigrationSchema::create_table_sql::<TestEntity>(false);
+        let sql = MigrationSchema::create_table_sql::<TestTable>(false);
 
         assert!(sql.contains("CREATE TABLE test_users"));
         assert!(sql.contains("id INTEGER PRIMARY KEY AUTOINCREMENT"));
@@ -312,28 +312,28 @@ mod tests {
 
     #[test]
     fn test_schema_create_table_sql_if_not_exists() {
-        let sql = MigrationSchema::create_table_sql::<TestEntity>(true);
+        let sql = MigrationSchema::create_table_sql::<TestTable>(true);
 
         assert!(sql.contains("CREATE TABLE IF NOT EXISTS test_users"));
     }
 
     #[test]
     fn test_schema_create_table_sql_no_if_not_exists() {
-        let sql = MigrationSchema::create_table_sql::<TestEntity>(false);
+        let sql = MigrationSchema::create_table_sql::<TestTable>(false);
 
         assert!(!sql.contains("IF NOT EXISTS"));
     }
 
     #[test]
     fn test_schema_drop_table_sql_basic() {
-        let sql = MigrationSchema::drop_table_sql::<TestEntity>(false);
+        let sql = MigrationSchema::drop_table_sql::<TestTable>(false);
 
         assert_eq!(sql, "DROP TABLE test_users");
     }
 
     #[test]
     fn test_schema_drop_table_sql_if_exists() {
-        let sql = MigrationSchema::drop_table_sql::<TestEntity>(true);
+        let sql = MigrationSchema::drop_table_sql::<TestTable>(true);
 
         assert_eq!(sql, "DROP TABLE IF EXISTS test_users");
     }
@@ -388,32 +388,32 @@ mod tests {
     }
 
     #[derive(Clone, Debug, PartialEq)]
-    struct UniqueTestModel {
+    struct UniqueTestRecord {
         id:    i64,
         email: String,
     }
 
-    impl crate::ModelTrait for UniqueTestModel {
-        type Entity = UniqueTestEntity;
+    impl crate::RecordTrait for UniqueTestRecord {
+        type Table = UniqueTestTable;
 
         fn get_primary_key_value(&self) -> Value {
             Value::Integer(self.id)
         }
     }
 
-    impl FromRow for UniqueTestModel {
+    impl FromRow for UniqueTestRecord {
         fn from_row(_row: &turso::Row) -> crate::error::Result<Self> {
-            Ok(UniqueTestModel { id: 1, email: "test@test.com".to_string() })
+            Ok(UniqueTestRecord { id: 1, email: "test@test.com".to_string() })
         }
     }
 
     #[derive(Clone, Debug, Default)]
-    struct UniqueTestActiveModel {
-        id: ActiveValue<i64>,
+    struct UniqueTestChangeSet {
+        id: FieldValue<i64>,
     }
 
-    impl ActiveModelTrait for UniqueTestActiveModel {
-        type Entity = UniqueTestEntity;
+    impl ChangeSetTrait for UniqueTestChangeSet {
+        type Table = UniqueTestTable;
 
         fn get_insert_columns_and_values(&self) -> (Vec<&'static str>, Vec<Value>) {
             (vec![], vec![])
@@ -433,12 +433,12 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct UniqueTestEntity;
+    struct UniqueTestTable;
 
-    impl crate::EntityTrait for UniqueTestEntity {
-        type ActiveModel = UniqueTestActiveModel;
+    impl crate::TableTrait for UniqueTestTable {
+        type ChangeSet = UniqueTestChangeSet;
         type Column = UniqueTestColumn;
-        type Model = UniqueTestModel;
+        type Record = UniqueTestRecord;
 
         fn table_name() -> &'static str {
             "unique_test"
@@ -463,7 +463,7 @@ mod tests {
 
     #[test]
     fn test_schema_create_table_with_unique() {
-        let sql = MigrationSchema::create_table_sql::<UniqueTestEntity>(false);
+        let sql = MigrationSchema::create_table_sql::<UniqueTestTable>(false);
 
         assert!(sql.contains("email TEXT NOT NULL UNIQUE"));
     }
@@ -516,32 +516,32 @@ mod tests {
     }
 
     #[derive(Clone, Debug, PartialEq)]
-    struct DefaultTestModel {
+    struct DefaultTestRecord {
         id:     i64,
         status: String,
     }
 
-    impl crate::ModelTrait for DefaultTestModel {
-        type Entity = DefaultTestEntity;
+    impl crate::RecordTrait for DefaultTestRecord {
+        type Table = DefaultTestTable;
 
         fn get_primary_key_value(&self) -> Value {
             Value::Integer(self.id)
         }
     }
 
-    impl FromRow for DefaultTestModel {
+    impl FromRow for DefaultTestRecord {
         fn from_row(_row: &turso::Row) -> crate::error::Result<Self> {
-            Ok(DefaultTestModel { id: 1, status: "active".to_string() })
+            Ok(DefaultTestRecord { id: 1, status: "active".to_string() })
         }
     }
 
     #[derive(Clone, Debug, Default)]
-    struct DefaultTestActiveModel {
-        id: ActiveValue<i64>,
+    struct DefaultTestChangeSet {
+        id: FieldValue<i64>,
     }
 
-    impl ActiveModelTrait for DefaultTestActiveModel {
-        type Entity = DefaultTestEntity;
+    impl ChangeSetTrait for DefaultTestChangeSet {
+        type Table = DefaultTestTable;
 
         fn get_insert_columns_and_values(&self) -> (Vec<&'static str>, Vec<Value>) {
             (vec![], vec![])
@@ -561,12 +561,12 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct DefaultTestEntity;
+    struct DefaultTestTable;
 
-    impl crate::EntityTrait for DefaultTestEntity {
-        type ActiveModel = DefaultTestActiveModel;
+    impl crate::TableTrait for DefaultTestTable {
+        type ChangeSet = DefaultTestChangeSet;
         type Column = DefaultTestColumn;
-        type Model = DefaultTestModel;
+        type Record = DefaultTestRecord;
 
         fn table_name() -> &'static str {
             "default_test"
@@ -591,7 +591,7 @@ mod tests {
 
     #[test]
     fn test_schema_create_table_with_default() {
-        let sql = MigrationSchema::create_table_sql::<DefaultTestEntity>(false);
+        let sql = MigrationSchema::create_table_sql::<DefaultTestTable>(false);
 
         assert!(sql.contains("status TEXT NOT NULL DEFAULT 'active'"));
     }
@@ -639,33 +639,33 @@ mod tests {
     }
 
     #[derive(Clone, Debug, PartialEq)]
-    struct CompositeModel {
+    struct CompositeRecord {
         user_id: i64,
         post_id: i64,
         content: String,
     }
 
-    impl crate::ModelTrait for CompositeModel {
-        type Entity = CompositeEntity;
+    impl crate::RecordTrait for CompositeRecord {
+        type Table = CompositeTable;
 
         fn get_primary_key_value(&self) -> Value {
             Value::Integer(self.user_id)
         }
     }
 
-    impl FromRow for CompositeModel {
+    impl FromRow for CompositeRecord {
         fn from_row(_row: &turso::Row) -> crate::error::Result<Self> {
-            Ok(CompositeModel { user_id: 1, post_id: 1, content: "test".to_string() })
+            Ok(CompositeRecord { user_id: 1, post_id: 1, content: "test".to_string() })
         }
     }
 
     #[derive(Clone, Debug, Default)]
-    struct CompositeActiveModel {
-        user_id: ActiveValue<i64>,
+    struct CompositeChangeSet {
+        user_id: FieldValue<i64>,
     }
 
-    impl ActiveModelTrait for CompositeActiveModel {
-        type Entity = CompositeEntity;
+    impl ChangeSetTrait for CompositeChangeSet {
+        type Table = CompositeTable;
 
         fn get_insert_columns_and_values(&self) -> (Vec<&'static str>, Vec<Value>) {
             (vec![], vec![])
@@ -685,12 +685,12 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct CompositeEntity;
+    struct CompositeTable;
 
-    impl crate::EntityTrait for CompositeEntity {
-        type ActiveModel = CompositeActiveModel;
+    impl crate::TableTrait for CompositeTable {
+        type ChangeSet = CompositeChangeSet;
         type Column = CompositeColumn;
-        type Model = CompositeModel;
+        type Record = CompositeRecord;
 
         fn table_name() -> &'static str {
             "composite_test"
@@ -715,7 +715,7 @@ mod tests {
 
     #[test]
     fn test_schema_create_table_non_autoincrement_pk() {
-        let sql = MigrationSchema::create_table_sql::<CompositeEntity>(false);
+        let sql = MigrationSchema::create_table_sql::<CompositeTable>(false);
 
         assert!(sql.contains("PRIMARY KEY (user_id)"));
         assert!(!sql.contains("AUTOINCREMENT"));

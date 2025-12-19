@@ -2,15 +2,15 @@ use std::marker::PhantomData;
 
 use crate::ColumnTrait;
 use crate::Condition;
-use crate::EntityTrait;
 use crate::FromRow;
 use crate::Order;
 use crate::OrderBy;
 use crate::Result;
+use crate::TableTrait;
 use crate::Value;
 
 #[derive(Clone, Debug)]
-pub struct Select<E: EntityTrait> {
+pub struct Select<E: TableTrait> {
     conditions: Vec<Condition>,
     order_by:   Vec<OrderBy>,
     limit:      Option<usize>,
@@ -19,7 +19,7 @@ pub struct Select<E: EntityTrait> {
     _entity:    PhantomData<E>,
 }
 
-impl<E: EntityTrait> Select<E> {
+impl<E: TableTrait> Select<E> {
     pub fn new() -> Self {
         Self {
             conditions: Vec::new(),
@@ -104,7 +104,7 @@ impl<E: EntityTrait> Select<E> {
         (sql, params)
     }
 
-    pub async fn all(self, conn: &crate::Connection) -> Result<Vec<E::Model>> {
+    pub async fn all(self, conn: &crate::Connection) -> Result<Vec<E::Record>> {
         let (sql, params) = self.build();
         let params: Vec<turso::Value> = params.into_iter().collect();
 
@@ -112,20 +112,20 @@ impl<E: EntityTrait> Select<E> {
         let mut results = Vec::new();
 
         while let Some(row) = rows.next().await? {
-            results.push(E::Model::from_row(&row)?);
+            results.push(E::Record::from_row(&row)?);
         }
 
         Ok(results)
     }
 
-    pub async fn one(self, conn: &crate::Connection) -> Result<Option<E::Model>> {
+    pub async fn one(self, conn: &crate::Connection) -> Result<Option<E::Record>> {
         let query = self.limit(1);
         let (sql, params) = query.build();
         let params: Vec<turso::Value> = params.into_iter().collect();
 
         let mut rows = conn.query(&sql, params).await?;
 
-        if let Some(row) = rows.next().await? { Ok(Some(E::Model::from_row(&row)?)) } else { Ok(None) }
+        if let Some(row) = rows.next().await? { Ok(Some(E::Record::from_row(&row)?)) } else { Ok(None) }
     }
 
     pub async fn count(self, conn: &crate::Connection) -> Result<i64> {
@@ -162,7 +162,7 @@ impl<E: EntityTrait> Select<E> {
     }
 }
 
-impl<E: EntityTrait> Default for Select<E> {
+impl<E: TableTrait> Default for Select<E> {
     fn default() -> Self {
         Self::new()
     }
@@ -171,53 +171,53 @@ impl<E: EntityTrait> Default for Select<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ActiveModelTrait;
-    use crate::ActiveValue;
+    use crate::ChangeSetTrait;
     use crate::ColumnType;
+    use crate::FieldValue;
     use crate::FromRow;
     use crate::IntoValue;
-    use crate::ModelTrait;
+    use crate::RecordTrait;
 
     #[derive(Clone, Debug, PartialEq)]
-    struct TestModel {
+    struct TestRecord {
         id:    i64,
         name:  String,
         email: String,
         age:   Option<i64>,
     }
 
-    impl ModelTrait for TestModel {
-        type Entity = TestEntity;
+    impl RecordTrait for TestRecord {
+        type Table = TestTable;
 
         fn get_primary_key_value(&self) -> Value {
             Value::Integer(self.id)
         }
     }
 
-    impl FromRow for TestModel {
+    impl FromRow for TestRecord {
         fn from_row(_row: &turso::Row) -> crate::error::Result<Self> {
-            Ok(TestModel { id: 1, name: "test".to_string(), email: "test@test.com".to_string(), age: Some(25) })
+            Ok(TestRecord { id: 1, name: "test".to_string(), email: "test@test.com".to_string(), age: Some(25) })
         }
     }
 
     #[derive(Clone, Debug, Default)]
-    struct TestActiveModel {
-        id:    ActiveValue<i64>,
-        name:  ActiveValue<String>,
-        email: ActiveValue<String>,
+    struct TestChangeSet {
+        id:    FieldValue<i64>,
+        name:  FieldValue<String>,
+        email: FieldValue<String>,
     }
 
-    impl ActiveModelTrait for TestActiveModel {
-        type Entity = TestEntity;
+    impl ChangeSetTrait for TestChangeSet {
+        type Table = TestTable;
 
         fn get_insert_columns_and_values(&self) -> (Vec<&'static str>, Vec<Value>) {
             let mut columns = Vec::new();
             let mut values = Vec::new();
-            if self.name.is_set() {
+            if self.name.is_changed() {
                 columns.push("name");
                 values.push(self.name.clone().take().unwrap().into_value());
             }
-            if self.email.is_set() {
+            if self.email.is_changed() {
                 columns.push("email");
                 values.push(self.email.clone().take().unwrap().into_value());
             }
@@ -226,10 +226,10 @@ mod tests {
 
         fn get_update_sets(&self) -> Vec<(&'static str, Value)> {
             let mut sets = Vec::new();
-            if self.name.is_set() {
+            if self.name.is_changed() {
                 sets.push(("name", self.name.clone().take().unwrap().into_value()));
             }
-            if self.email.is_set() {
+            if self.email.is_changed() {
                 sets.push(("email", self.email.clone().take().unwrap().into_value()));
             }
             sets
@@ -281,12 +281,12 @@ mod tests {
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestEntity;
+    struct TestTable;
 
-    impl EntityTrait for TestEntity {
-        type ActiveModel = TestActiveModel;
+    impl TableTrait for TestTable {
+        type ChangeSet = TestChangeSet;
         type Column = TestColumn;
-        type Model = TestModel;
+        type Record = TestRecord;
 
         fn table_name() -> &'static str {
             "test_users"
@@ -311,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_select_new() {
-        let select = Select::<TestEntity>::new();
+        let select = Select::<TestTable>::new();
         let (sql, params) = select.build();
         assert_eq!(sql, "SELECT id, name, email, age FROM test_users");
         assert!(params.is_empty());
@@ -319,14 +319,14 @@ mod tests {
 
     #[test]
     fn test_select_default() {
-        let select = Select::<TestEntity>::default();
+        let select = Select::<TestTable>::default();
         let (sql, _) = select.build();
         assert_eq!(sql, "SELECT id, name, email, age FROM test_users");
     }
 
     #[test]
     fn test_select_filter_single() {
-        let select = Select::<TestEntity>::new().filter(Condition::eq(TestColumn::Id, 1));
+        let select = Select::<TestTable>::new().filter(Condition::eq(TestColumn::Id, 1));
         let (sql, params) = select.build();
 
         assert_eq!(sql, "SELECT id, name, email, age FROM test_users WHERE (id = ?)");
@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn test_select_filter_multiple() {
-        let select = Select::<TestEntity>::new()
+        let select = Select::<TestTable>::new()
             .filter(Condition::eq(TestColumn::Name, "Alice"))
             .filter(Condition::gt(TestColumn::Age, 18));
         let (sql, params) = select.build();
@@ -350,7 +350,7 @@ mod tests {
 
     #[test]
     fn test_select_and_filter() {
-        let select = Select::<TestEntity>::new().and_filter(Condition::eq(TestColumn::Id, 1));
+        let select = Select::<TestTable>::new().and_filter(Condition::eq(TestColumn::Id, 1));
         let (sql, _) = select.build();
 
         assert!(sql.contains("WHERE (id = ?)"));
@@ -358,7 +358,7 @@ mod tests {
 
     #[test]
     fn test_select_specific_columns() {
-        let select = Select::<TestEntity>::new().columns(vec![TestColumn::Id, TestColumn::Name]);
+        let select = Select::<TestTable>::new().columns(vec![TestColumn::Id, TestColumn::Name]);
         let (sql, _) = select.build();
 
         assert_eq!(sql, "SELECT id, name FROM test_users");
@@ -366,7 +366,7 @@ mod tests {
 
     #[test]
     fn test_select_order_by_asc() {
-        let select = Select::<TestEntity>::new().order_by_asc(TestColumn::Name);
+        let select = Select::<TestTable>::new().order_by_asc(TestColumn::Name);
         let (sql, _) = select.build();
 
         assert!(sql.contains("ORDER BY name ASC"));
@@ -374,7 +374,7 @@ mod tests {
 
     #[test]
     fn test_select_order_by_desc() {
-        let select = Select::<TestEntity>::new().order_by_desc(TestColumn::Age);
+        let select = Select::<TestTable>::new().order_by_desc(TestColumn::Age);
         let (sql, _) = select.build();
 
         assert!(sql.contains("ORDER BY age DESC"));
@@ -382,7 +382,7 @@ mod tests {
 
     #[test]
     fn test_select_order_by_with_direction() {
-        let select = Select::<TestEntity>::new().order_by(TestColumn::Id, Order::Desc);
+        let select = Select::<TestTable>::new().order_by(TestColumn::Id, Order::Desc);
         let (sql, _) = select.build();
 
         assert!(sql.contains("ORDER BY id DESC"));
@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn test_select_multiple_order_by() {
-        let select = Select::<TestEntity>::new().order_by_asc(TestColumn::Name).order_by_desc(TestColumn::Age);
+        let select = Select::<TestTable>::new().order_by_asc(TestColumn::Name).order_by_desc(TestColumn::Age);
         let (sql, _) = select.build();
 
         assert!(sql.contains("ORDER BY name ASC, age DESC"));
@@ -398,7 +398,7 @@ mod tests {
 
     #[test]
     fn test_select_limit() {
-        let select = Select::<TestEntity>::new().limit(10);
+        let select = Select::<TestTable>::new().limit(10);
         let (sql, _) = select.build();
 
         assert!(sql.contains("LIMIT 10"));
@@ -406,7 +406,7 @@ mod tests {
 
     #[test]
     fn test_select_offset() {
-        let select = Select::<TestEntity>::new().offset(20);
+        let select = Select::<TestTable>::new().offset(20);
         let (sql, _) = select.build();
 
         assert!(sql.contains("OFFSET 20"));
@@ -414,7 +414,7 @@ mod tests {
 
     #[test]
     fn test_select_limit_and_offset() {
-        let select = Select::<TestEntity>::new().limit(10).offset(20);
+        let select = Select::<TestTable>::new().limit(10).offset(20);
         let (sql, _) = select.build();
 
         assert!(sql.contains("LIMIT 10"));
@@ -423,7 +423,7 @@ mod tests {
 
     #[test]
     fn test_select_complex_query() {
-        let select = Select::<TestEntity>::new()
+        let select = Select::<TestTable>::new()
             .filter(Condition::eq(TestColumn::Name, "Alice"))
             .filter(Condition::is_not_null(TestColumn::Email))
             .order_by_desc(TestColumn::Age)
@@ -443,7 +443,7 @@ mod tests {
 
     #[test]
     fn test_select_clause_order() {
-        let select = Select::<TestEntity>::new()
+        let select = Select::<TestTable>::new()
             .limit(5)
             .filter(Condition::eq(TestColumn::Id, 1))
             .offset(10)
@@ -462,7 +462,7 @@ mod tests {
 
     #[test]
     fn test_select_clone() {
-        let select = Select::<TestEntity>::new().filter(Condition::eq(TestColumn::Id, 1)).limit(10);
+        let select = Select::<TestTable>::new().filter(Condition::eq(TestColumn::Id, 1)).limit(10);
         let cloned = select.clone();
 
         let (sql1, params1) = select.build();
@@ -474,14 +474,14 @@ mod tests {
 
     #[test]
     fn test_select_debug() {
-        let select = Select::<TestEntity>::new().limit(5);
+        let select = Select::<TestTable>::new().limit(5);
         let debug = format!("{:?}", select);
         assert!(debug.contains("Select"));
     }
 
     #[test]
     fn test_select_no_conditions() {
-        let select = Select::<TestEntity>::new();
+        let select = Select::<TestTable>::new();
         let (sql, params) = select.build();
 
         assert!(!sql.contains("WHERE"));
@@ -490,7 +490,7 @@ mod tests {
 
     #[test]
     fn test_select_with_in_condition() {
-        let select = Select::<TestEntity>::new().filter(Condition::is_in(TestColumn::Id, vec![1, 2, 3]));
+        let select = Select::<TestTable>::new().filter(Condition::is_in(TestColumn::Id, vec![1, 2, 3]));
         let (sql, params) = select.build();
 
         assert!(sql.contains("id IN (?, ?, ?)"));
@@ -499,7 +499,7 @@ mod tests {
 
     #[test]
     fn test_select_with_between_condition() {
-        let select = Select::<TestEntity>::new().filter(Condition::between(TestColumn::Age, 18, 65));
+        let select = Select::<TestTable>::new().filter(Condition::between(TestColumn::Age, 18, 65));
         let (sql, params) = select.build();
 
         assert!(sql.contains("age BETWEEN ? AND ?"));

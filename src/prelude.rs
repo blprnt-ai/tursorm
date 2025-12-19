@@ -1,6 +1,6 @@
 pub use turso::Row;
 pub use turso::Rows;
-pub use tursorm_macros::Entity;
+pub use tursorm_macros::Table;
 
 pub use crate::connection::prelude::*;
 pub use crate::error::Error;

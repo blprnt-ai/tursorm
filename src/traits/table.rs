@@ -1,18 +1,18 @@
-use super::active_model::ActiveModelTrait;
+use super::change_set::ChangeSetTrait;
 use super::column::ColumnTrait;
 use super::from_row::FromRow;
-use super::model::ModelTrait;
+use super::record::RecordTrait;
 use crate::Condition;
 use crate::Delete;
 use crate::IntoValue;
 use crate::Select;
 
-pub trait EntityTrait: Default + Send + Sync + 'static {
-    type Model: ModelTrait<Entity = Self> + FromRow + Send;
+pub trait TableTrait: Default + Send + Sync + 'static {
+    type Record: RecordTrait<Table = Self> + FromRow + Send;
 
     type Column: ColumnTrait;
 
-    type ActiveModel: ActiveModelTrait<Entity = Self>;
+    type ChangeSet: ChangeSetTrait<Table = Self>;
 
     fn table_name() -> &'static str;
 
@@ -25,7 +25,7 @@ pub trait EntityTrait: Default + Send + Sync + 'static {
     fn column_count() -> usize;
 }
 
-pub trait EntitySelectExt: EntityTrait {
+pub trait TableSelectExt: TableTrait {
     fn find() -> Select<Self> {
         Select::new()
     }
@@ -36,12 +36,12 @@ pub trait EntitySelectExt: EntityTrait {
     }
 }
 
-impl<E: EntityTrait> EntitySelectExt for E {}
+impl<Table: TableTrait> TableSelectExt for Table {}
 
-pub trait EntityDeleteExt: EntityTrait {
-    fn delete_many(models: Vec<Self::Model>) -> Delete<Self> {
+pub trait TableDeleteExt: TableTrait {
+    fn delete_many(records: Vec<Self::Record>) -> Delete<Self> {
         Delete::new()
-            .filter(Condition::is_in(Self::primary_key(), models.iter().map(|m| m.get_primary_key_value()).collect()))
+            .filter(Condition::is_in(Self::primary_key(), records.iter().map(|m| m.get_primary_key_value()).collect()))
     }
 
     fn delete_many_by_ids<V: IntoValue>(ids: Vec<V>) -> Delete<Self> {
@@ -53,4 +53,4 @@ pub trait EntityDeleteExt: EntityTrait {
     }
 }
 
-impl<E: EntityTrait> EntityDeleteExt for E {}
+impl<Table: TableTrait> TableDeleteExt for Table {}
