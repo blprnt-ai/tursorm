@@ -163,5 +163,6 @@ pub mod migration;
 
 pub mod prelude;
 pub use prelude::*;
-pub use query::delete::DeleteExt;
-pub use query::select::SelectExt;
+pub use traits::entity::EntityDeleteExt;
+pub use traits::entity::EntitySelectExt;
+pub use traits::model::ModelDeleteExt;

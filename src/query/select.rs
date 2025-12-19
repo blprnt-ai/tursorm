@@ -6,7 +6,6 @@ use crate::ColumnTrait;
 use crate::Condition;
 use crate::EntityTrait;
 use crate::FromRow;
-use crate::ModelTrait;
 use crate::Order;
 use crate::OrderBy;
 use crate::Result;
@@ -232,35 +231,6 @@ impl<E: EntityTrait> Default for Select<E> {
     }
 }
 
-/// Extension trait for models to enable fluent querying
-///
-/// This trait is automatically implemented for all types that implement
-/// [`ModelTrait`], providing convenient static methods for querying.
-///
-/// # Example
-///
-/// ```ignore
-/// // Find all users
-/// let users = User::find().all(&conn).await?;
-///
-/// // Find a user by ID
-/// let user = User::find_by_id(1).one(&conn).await?;
-/// ```
-pub trait SelectExt: ModelTrait {
-    /// Create a SELECT query for all records
-    fn find() -> Select<Self::Entity> {
-        Select::new()
-    }
-
-    /// Create a SELECT query filtered by primary key
-    fn find_by_id<V: crate::value::IntoValue>(id: V) -> Select<Self::Entity>
-    where <Self::Entity as EntityTrait>::Column: ColumnTrait {
-        Select::new().filter(Condition::eq(<Self::Entity as EntityTrait>::primary_key(), id))
-    }
-}
-
-impl<M: ModelTrait> SelectExt for M {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,6 +239,7 @@ mod tests {
     use crate::ColumnType;
     use crate::FromRow;
     use crate::IntoValue;
+    use crate::ModelTrait;
 
     // Mock Entity and related types for testing
     #[derive(Clone, Debug, PartialEq)]

@@ -28,20 +28,30 @@
 /// assert!(id.is_not_set());
 /// ```
 #[derive(Clone, Debug)]
-pub enum ActiveValue<T> {
+pub enum ActiveValue<T: PartialEq> {
     /// Value is set and will be included in queries
     Set(T),
     /// Value is not set and will be excluded from queries
     NotSet,
 }
 
-impl<T> Default for ActiveValue<T> {
+impl<T: PartialEq> PartialEq for ActiveValue<T> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ActiveValue::Set(a), ActiveValue::Set(b)) => a == b,
+            (ActiveValue::NotSet, ActiveValue::NotSet) => true,
+            _ => false,
+        }
+    }
+}
+
+impl<T: PartialEq> Default for ActiveValue<T> {
     fn default() -> Self {
         ActiveValue::NotSet
     }
 }
 
-impl<T> ActiveValue<T> {
+impl<T: PartialEq> ActiveValue<T> {
     /// Create a new set value
     pub fn set(value: T) -> Self {
         ActiveValue::Set(value)
@@ -91,7 +101,7 @@ impl<T> ActiveValue<T> {
     }
 }
 
-impl<T> From<T> for ActiveValue<T> {
+impl<T: PartialEq> From<T> for ActiveValue<T> {
     fn from(value: T) -> Self {
         ActiveValue::Set(value)
     }
@@ -110,7 +120,7 @@ impl<T> From<T> for ActiveValue<T> {
 ///     ..Default::default()
 /// };
 /// ```
-pub fn set<T>(value: T) -> ActiveValue<T> {
+pub fn set<T: PartialEq>(value: T) -> ActiveValue<T> {
     ActiveValue::Set(value)
 }
 
@@ -124,6 +134,6 @@ pub fn set<T>(value: T) -> ActiveValue<T> {
 /// let id: ActiveValue<i64> = not_set();
 /// assert!(id.is_not_set());
 /// ```
-pub fn not_set<T>() -> ActiveValue<T> {
+pub fn not_set<T: PartialEq>() -> ActiveValue<T> {
     ActiveValue::NotSet
 }

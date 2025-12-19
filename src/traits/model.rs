@@ -1,4 +1,6 @@
 use super::entity::EntityTrait;
+use crate::Condition;
+use crate::Delete;
 use crate::value::Value;
 
 /// Trait for model types that represent database rows
@@ -55,3 +57,10 @@ pub trait ModelTrait: Clone + Send + Sync {
         <Self::Entity as EntityTrait>::ActiveModel::from(self)
     }
 }
+
+pub trait ModelDeleteExt: ModelTrait {
+    fn delete(self) -> Delete<Self::Entity> {
+        Delete::new().filter(Condition::eq(Self::Entity::primary_key(), self.get_primary_key_value()))
+    }
+}
+impl<M: ModelTrait> ModelDeleteExt for M {}

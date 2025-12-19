@@ -4,8 +4,6 @@ use std::marker::PhantomData;
 
 use crate::Condition;
 use crate::EntityTrait;
-use crate::IntoValue;
-use crate::ModelTrait;
 use crate::Result;
 use crate::Value;
 
@@ -88,25 +86,6 @@ impl<E: EntityTrait> Default for Delete<E> {
         Self::new()
     }
 }
-
-pub trait DeleteExt: ModelTrait {
-    fn delete_many(models: Vec<Self>) -> Delete<Self::Entity> {
-        Delete::new().filter(Condition::is_in(
-            Self::Entity::primary_key(),
-            models.iter().map(|m| m.get_primary_key_value()).collect(),
-        ))
-    }
-
-    fn delete_many_by_ids<V: IntoValue>(ids: Vec<V>) -> Delete<Self::Entity> {
-        Delete::new().filter(Condition::is_in(Self::Entity::primary_key(), ids))
-    }
-
-    fn truncate() -> Delete<Self::Entity> {
-        Delete::new()
-    }
-}
-
-impl<M: ModelTrait> DeleteExt for M {}
 
 #[cfg(test)]
 mod tests {

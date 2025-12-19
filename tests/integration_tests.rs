@@ -919,7 +919,7 @@ mod delete_tests {
 
 mod model_ext_tests {
 
-    use tursorm::SelectExt;
+    use tursorm::EntitySelectExt;
 
     use super::*;
 
@@ -929,7 +929,7 @@ mod model_ext_tests {
         create_users_table(&conn).await;
         insert_sample_users(&conn).await;
 
-        let users = User::find().all(&conn).await.unwrap();
+        let users = UserEntity::find().all(&conn).await.unwrap();
         assert_eq!(users.len(), 5);
     }
 
@@ -939,7 +939,7 @@ mod model_ext_tests {
         create_users_table(&conn).await;
         insert_sample_users(&conn).await;
 
-        let user = User::find_by_id(1).one(&conn).await.unwrap();
+        let user = UserEntity::find_by_id(1).one(&conn).await.unwrap();
         assert!(user.is_some());
         assert_eq!(user.unwrap().name, "Alice");
     }
@@ -950,7 +950,7 @@ mod model_ext_tests {
         create_users_table(&conn).await;
         insert_sample_users(&conn).await;
 
-        let users = User::find()
+        let users = UserEntity::find()
             .filter(Condition::gt(UserColumn::Age, 25))
             .order_by_desc(UserColumn::Age)
             .all(&conn)
