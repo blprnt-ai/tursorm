@@ -1,8 +1,4 @@
-mod schema;
-
 use std::collections::HashMap;
-
-pub use schema::MigrationSchema;
 
 use crate::ForeignKeyInfo;
 use crate::OnDelete;
@@ -204,6 +200,28 @@ impl Default for MigrationOptions {
     }
 }
 
+impl MigrationOptions {
+    pub fn dry_run(mut self, dry_run: bool) -> Self {
+        self.dry_run = dry_run;
+        self
+    }
+
+    pub fn verbose(mut self, verbose: bool) -> Self {
+        self.verbose = verbose;
+        self
+    }
+
+    pub fn allow_drop_columns(mut self, allow_drop_columns: bool) -> Self {
+        self.allow_drop_columns = allow_drop_columns;
+        self
+    }
+
+    pub fn allow_drop_tables(mut self, allow_drop_tables: bool) -> Self {
+        self.allow_drop_tables = allow_drop_tables;
+        self
+    }
+}
+
 pub struct TableSchema {
     table_name: &'static str,
     columns:    Vec<TableColumnInfo>,
@@ -332,6 +350,8 @@ impl Migrator {
 
             let default_value = match row.get_value(4)? {
                 turso::Value::Text(s) => Some(s),
+                turso::Value::Integer(i) => Some(i.to_string()),
+                turso::Value::Real(f) => Some(f.to_string()),
                 turso::Value::Null => None,
                 _ => None,
             };
@@ -544,6 +564,7 @@ impl Migrator {
             }
 
             if let Some(default) = col.default_value {
+                let default = Self::default_value_to_sql(default, col.column_type);
                 def.push_str(&format!(" DEFAULT {}", default));
             }
 
@@ -559,6 +580,45 @@ impl Migrator {
         column_defs.extend(Self::generate_create_foreign_key_changes(schema));
 
         format!("CREATE TABLE {} ({})", schema.table_name, column_defs.join(", "))
+    }
+
+    fn default_value_to_sql(default: &str, col_type: crate::value::ColumnType) -> String {
+        let default_result = match col_type {
+            crate::value::ColumnType::Integer => Self::parse_default_to_i64(default).map(|v| v.to_string()),
+            crate::value::ColumnType::Float => Self::parse_default_to_f64(default).map(|v| v.to_string()),
+            crate::value::ColumnType::Text => Self::parse_default_to_text(default),
+            crate::value::ColumnType::Blob => Self::parse_default_to_hex_str(default),
+            _ => None,
+        };
+
+        default_result.unwrap_or(default.to_string())
+    }
+
+    fn parse_default_to_i64(default: &str) -> Option<i64> {
+        let lower_case = default.to_lowercase();
+        if lower_case == "true" {
+            Some(1)
+        } else if lower_case == "false" {
+            Some(0)
+        } else {
+            default.parse::<i64>().ok()
+        }
+    }
+
+    fn parse_default_to_f64(default: &str) -> Option<f64> {
+        default.parse::<f64>().ok()
+    }
+
+    fn parse_default_to_text(default: &str) -> Option<String> {
+        Some(format!("'{}'", default))
+    }
+
+    fn parse_default_to_hex_str(default: &str) -> Option<String> {
+        if default.starts_with("X'") && default.ends_with("'") {
+            Some(default.to_string())
+        } else {
+            Some(format!("X'{}'", default))
+        }
     }
 
     fn generate_create_foreign_key_changes(schema: &TableSchema) -> Vec<String> {

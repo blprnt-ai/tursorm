@@ -147,68 +147,6 @@ async fn insert_sample_users(conn: &Connection) -> Vec<User> {
     users
 }
 
-mod schema_tests {
-    use tursorm::MigrationSchema;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn test_create_table_sql_generation() {
-        let sql = MigrationSchema::create_table_sql::<UserTable>(false);
-        assert!(sql.contains("CREATE TABLE users"));
-        assert!(sql.contains("id INTEGER PRIMARY KEY AUTOINCREMENT"));
-        assert!(sql.contains("name TEXT NOT NULL"));
-        assert!(sql.contains("email TEXT NOT NULL"));
-        assert!(sql.contains("age INTEGER"));
-    }
-
-    #[tokio::test]
-    async fn test_create_table_if_not_exists() {
-        let sql = MigrationSchema::create_table_sql::<UserTable>(true);
-        assert!(sql.contains("CREATE TABLE IF NOT EXISTS users"));
-    }
-
-    #[tokio::test]
-    async fn test_drop_table_sql_generation() {
-        let sql = MigrationSchema::drop_table_sql::<UserTable>(false);
-        assert_eq!(sql, "DROP TABLE users");
-
-        let sql_if_exists = MigrationSchema::drop_table_sql::<UserTable>(true);
-        assert_eq!(sql_if_exists, "DROP TABLE IF EXISTS users");
-    }
-
-    #[tokio::test]
-    async fn test_schema_create_table() {
-        let conn = create_test_db().await;
-
-        MigrationSchema::create_table::<UserTable>(&conn, false).await.unwrap();
-
-        let change_set = UserChangeSet {
-            name: set("Test".to_string()),
-            email: set("test@test.com".to_string()),
-            ..Default::default()
-        };
-        let result = Insert::<UserTable>::new(change_set).exec(&conn).await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_schema_drop_table() {
-        let conn = create_test_db().await;
-
-        MigrationSchema::create_table::<UserTable>(&conn, false).await.unwrap();
-        MigrationSchema::drop_table::<UserTable>(&conn, false).await.unwrap();
-
-        let change_set = UserChangeSet {
-            name: set("Test".to_string()),
-            email: set("test@test.com".to_string()),
-            ..Default::default()
-        };
-        let result = Insert::<UserTable>::new(change_set).exec(&conn).await;
-        assert!(result.is_err());
-    }
-}
-
 mod insert_tests {
     use super::*;
 
