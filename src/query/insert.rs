@@ -74,7 +74,8 @@ impl<Table: TableTrait> Insert<Table> {
 
         let change_set = self.change_sets.first().unwrap();
         let (sql, params) = self.build_single(change_set);
-        let params: Vec<turso::Value> = params.into_iter().collect();
+        tracing::debug!("Insert SQL: {}", sql);
+        tracing::debug!("Insert Params: {:?}", params);
 
         conn.execute(&sql, params).await?;
         Ok(conn.last_insert_rowid())
@@ -133,7 +134,7 @@ mod tests {
     #[allow(unused_imports)]
     use crate::IntoValue;
     use crate::RecordTrait;
-    use crate::change;
+    use crate::set;
 
     #[derive(Clone, Debug, PartialEq)]
     struct TestRecord {
@@ -266,8 +267,8 @@ mod tests {
     #[test]
     fn test_insert_new() {
         let change_set = TestChangeSet {
-            name: change("Alice".to_string()),
-            email: change("alice@example.com".to_string()),
+            name: set("Alice".to_string()),
+            email: set("alice@example.com".to_string()),
             ..Default::default()
         };
         let insert = Insert::<TestTable>::new(change_set);
@@ -285,13 +286,13 @@ mod tests {
     #[test]
     fn test_insert_add() {
         let change_set1 = TestChangeSet {
-            name: change("Alice".to_string()),
-            email: change("alice@example.com".to_string()),
+            name: set("Alice".to_string()),
+            email: set("alice@example.com".to_string()),
             ..Default::default()
         };
         let change_set2 = TestChangeSet {
-            name: change("Bob".to_string()),
-            email: change("bob@example.com".to_string()),
+            name: set("Bob".to_string()),
+            email: set("bob@example.com".to_string()),
             ..Default::default()
         };
 
@@ -303,13 +304,13 @@ mod tests {
     fn test_insert_add_many() {
         let change_sets = vec![
             TestChangeSet {
-                name: change("Alice".to_string()),
-                email: change("alice@example.com".to_string()),
+                name: set("Alice".to_string()),
+                email: set("alice@example.com".to_string()),
                 ..Default::default()
             },
             TestChangeSet {
-                name: change("Bob".to_string()),
-                email: change("bob@example.com".to_string()),
+                name: set("Bob".to_string()),
+                email: set("bob@example.com".to_string()),
                 ..Default::default()
             },
         ];
@@ -321,8 +322,8 @@ mod tests {
     #[test]
     fn test_insert_build_with_values() {
         let change_set = TestChangeSet {
-            name: change("Alice".to_string()),
-            email: change("alice@example.com".to_string()),
+            name: set("Alice".to_string()),
+            email: set("alice@example.com".to_string()),
             ..Default::default()
         };
         let insert = Insert::<TestTable>::new(change_set);
@@ -340,8 +341,8 @@ mod tests {
     #[test]
     fn test_insert_clone() {
         let change_set = TestChangeSet {
-            name: change("Alice".to_string()),
-            email: change("alice@example.com".to_string()),
+            name: set("Alice".to_string()),
+            email: set("alice@example.com".to_string()),
             ..Default::default()
         };
         let insert = Insert::<TestTable>::new(change_set);
@@ -352,7 +353,7 @@ mod tests {
 
     #[test]
     fn test_insert_debug() {
-        let change_set = TestChangeSet { name: change("Test".to_string()), ..Default::default() };
+        let change_set = TestChangeSet { name: set("Test".to_string()), ..Default::default() };
         let insert = Insert::<TestTable>::new(change_set);
         let debug = format!("{:?}", insert);
 
@@ -363,13 +364,13 @@ mod tests {
     fn test_insert_many_new() {
         let change_sets = vec![
             TestChangeSet {
-                name: change("Alice".to_string()),
-                email: change("alice@example.com".to_string()),
+                name: set("Alice".to_string()),
+                email: set("alice@example.com".to_string()),
                 ..Default::default()
             },
             TestChangeSet {
-                name: change("Bob".to_string()),
-                email: change("bob@example.com".to_string()),
+                name: set("Bob".to_string()),
+                email: set("bob@example.com".to_string()),
                 ..Default::default()
             },
         ];
@@ -386,7 +387,7 @@ mod tests {
 
     #[test]
     fn test_insert_many_clone() {
-        let change_sets = vec![TestChangeSet { name: change("Alice".to_string()), ..Default::default() }];
+        let change_sets = vec![TestChangeSet { name: set("Alice".to_string()), ..Default::default() }];
         let insert_many = InsertMany::<TestTable>::new(change_sets);
         let cloned = insert_many.clone();
 
@@ -395,7 +396,7 @@ mod tests {
 
     #[test]
     fn test_insert_partial_fields() {
-        let change_set = TestChangeSet { name: change("Alice".to_string()), ..Default::default() };
+        let change_set = TestChangeSet { name: set("Alice".to_string()), ..Default::default() };
         let insert = Insert::<TestTable>::new(change_set);
         let debug = format!("{:?}", insert);
         assert!(debug.contains("Alice"));
@@ -406,9 +407,9 @@ mod tests {
     #[test]
     fn test_insert_chained_add() {
         let insert = Insert::<TestTable>::empty()
-            .add(TestChangeSet { name: change("Alice".to_string()), ..Default::default() })
-            .add(TestChangeSet { name: change("Bob".to_string()), ..Default::default() })
-            .add(TestChangeSet { name: change("Charlie".to_string()), ..Default::default() });
+            .add(TestChangeSet { name: set("Alice".to_string()), ..Default::default() })
+            .add(TestChangeSet { name: set("Bob".to_string()), ..Default::default() })
+            .add(TestChangeSet { name: set("Charlie".to_string()), ..Default::default() });
 
         let debug = format!("{:?}", insert);
         assert!(debug.contains("Alice"));

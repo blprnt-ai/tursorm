@@ -12,11 +12,11 @@ pub enum ColumnType {
     Null,
 }
 
-pub trait IntoValue {
+pub trait IntoValue: std::fmt::Debug {
     fn into_value(self) -> Value;
 }
 
-pub trait FromValue: Sized {
+pub trait FromValue: std::fmt::Debug + Sized {
     fn from_value(value: Value) -> Result<Self>;
 
     fn from_value_opt(value: Value) -> Result<Self>
@@ -127,7 +127,7 @@ impl IntoValue for bool {
     }
 }
 
-impl<T: IntoValue> IntoValue for Option<T> {
+impl<V: IntoValue> IntoValue for Option<V> {
     fn into_value(self) -> Value {
         match self {
             Some(v) => v.into_value(),
@@ -254,11 +254,11 @@ impl FromValue for bool {
     }
 }
 
-impl<T: FromValue> FromValue for Option<T> {
+impl<V: FromValue> FromValue for Option<V> {
     fn from_value(value: Value) -> Result<Self> {
         match value {
             Value::Null => Ok(None),
-            other => T::from_value(other).map(Some),
+            other => V::from_value(other).map(Some),
         }
     }
 
@@ -392,7 +392,7 @@ mod json_impl {
     #[derive(Clone, Debug, PartialEq)]
     pub struct Json<T>(pub T);
 
-    impl<T: Serialize> IntoValue for Json<T> {
+    impl<V: Serialize + std::fmt::Debug> IntoValue for Json<V> {
         fn into_value(self) -> Value {
             match serde_json::to_string(&self.0) {
                 Ok(s) => Value::Text(s),
@@ -401,11 +401,11 @@ mod json_impl {
         }
     }
 
-    impl<T: DeserializeOwned> FromValue for Json<T> {
+    impl<V: DeserializeOwned + std::fmt::Debug> FromValue for Json<V> {
         fn from_value(value: Value) -> Result<Self> {
             match value {
                 Value::Text(s) => {
-                    let parsed: T = serde_json::from_str(&s)?;
+                    let parsed: V = serde_json::from_str(&s)?;
                     Ok(Json(parsed))
                 }
                 Value::Null => Err(Error::UnexpectedNull),

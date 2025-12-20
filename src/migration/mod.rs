@@ -224,9 +224,9 @@ pub struct TableColumnInfo {
 }
 
 impl TableSchema {
-    pub fn of<E: TableTrait>() -> Self
-    where E::Column: 'static {
-        let columns = E::Column::all()
+    pub fn of<Table: TableTrait>() -> Self
+    where Table::Column: 'static {
+        let columns = Table::Column::all()
             .iter()
             .map(|col| TableColumnInfo {
                 name:              col.name(),
@@ -241,7 +241,7 @@ impl TableSchema {
             })
             .collect();
 
-        Self { table_name: E::table_name(), columns }
+        Self { table_name: Table::table_name(), columns }
     }
 
     pub fn table_name(&self) -> &'static str {
@@ -256,19 +256,19 @@ impl TableSchema {
 pub struct Migrator;
 
 impl Migrator {
-    pub async fn migrate<E: TableTrait>(conn: &crate::Connection) -> Result<SchemaDiff>
-    where E::Column: 'static {
-        Self::migrate_with_options::<E>(conn, MigrationOptions::default()).await
+    pub async fn migrate<Table: TableTrait>(conn: &crate::Connection) -> Result<SchemaDiff>
+    where Table::Column: 'static {
+        Self::migrate_with_options::<Table>(conn, MigrationOptions::default()).await
     }
 
-    pub async fn migrate_with_options<E: TableTrait>(
+    pub async fn migrate_with_options<Table: TableTrait>(
         conn: &crate::Connection,
         options: MigrationOptions,
     ) -> Result<SchemaDiff>
     where
-        E::Column: 'static,
+        Table::Column: 'static,
     {
-        let schema = TableSchema::of::<E>();
+        let schema = TableSchema::of::<Table>();
         Self::migrate_schema(conn, &schema, &options).await
     }
 
@@ -357,9 +357,9 @@ impl Migrator {
         Ok(Some(DbTableInfo { name: table_name.to_string(), columns, primary_keys }))
     }
 
-    pub async fn diff<E: TableTrait>(conn: &crate::Connection) -> Result<SchemaDiff>
-    where E::Column: 'static {
-        let schema = TableSchema::of::<E>();
+    pub async fn diff<Table: TableTrait>(conn: &crate::Connection) -> Result<SchemaDiff>
+    where Table::Column: 'static {
+        let schema = TableSchema::of::<Table>();
         Self::diff_schema(conn, &schema, &MigrationOptions::default()).await
     }
 
@@ -574,7 +574,8 @@ impl Migrator {
         let foreign_key_info = col.foreign_key.as_ref().unwrap();
         let base_sql = format!("FOREIGN KEY ({}) REFERENCES {}", col.name, foreign_key_info.table_name);
 
-        let on_delete = match foreign_key_info.on_delete {
+        // Not yet implemented, ignored
+        let _on_delete = match foreign_key_info.on_delete {
             OnDelete::Restrict => "ON DELETE RESTRICT",
             OnDelete::Cascade => "ON DELETE CASCADE",
             OnDelete::SetNull => " ON DELETE SET NULL",
@@ -582,7 +583,8 @@ impl Migrator {
             OnDelete::None => "",
         };
 
-        let on_update = match foreign_key_info.on_update {
+        // Not yet implemented, ignored
+        let _on_update = match foreign_key_info.on_update {
             OnUpdate::Restrict => "ON UPDATE RESTRICT",
             OnUpdate::Cascade => "ON UPDATE CASCADE",
             OnUpdate::SetNull => "ON UPDATE SET NULL",
@@ -590,7 +592,8 @@ impl Migrator {
             OnUpdate::None => "",
         };
 
-        format!("{} {} {}", base_sql, on_delete, on_update)
+        // format!("{} {} {}", base_sql, on_delete, on_update)
+        base_sql
     }
 
     fn generate_add_column_sql(table_name: &str, col: &TableColumnInfo) -> String {

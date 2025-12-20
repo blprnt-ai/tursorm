@@ -5,21 +5,23 @@ use crate::TableTrait;
 pub struct MigrationSchema;
 
 impl MigrationSchema {
-    pub async fn create_table<E: TableTrait>(conn: &crate::Connection, if_not_exists: bool) -> Result<()>
-    where E::Column: 'static {
-        let sql = Self::create_table_sql::<E>(if_not_exists);
+    #[tracing::instrument(skip(conn))]
+    pub async fn create_table<Table: TableTrait>(conn: &crate::Connection, if_not_exists: bool) -> Result<()>
+    where Table::Column: 'static {
+        let sql = Self::create_table_sql::<Table>(if_not_exists);
         conn.execute(&sql, ()).await?;
         Ok(())
     }
 
-    pub fn create_table_sql<E: TableTrait>(if_not_exists: bool) -> String
-    where E::Column: 'static {
+    #[tracing::instrument]
+    pub fn create_table_sql<Table: TableTrait>(if_not_exists: bool) -> String
+    where Table::Column: 'static {
         let exists_clause = if if_not_exists { "IF NOT EXISTS " } else { "" };
 
         let mut column_defs = Vec::new();
         let mut primary_keys = Vec::new();
 
-        for col in <E::Column as ColumnTrait>::all() {
+        for col in <Table::Column as ColumnTrait>::all() {
             let mut def = format!("{} {}", col.name(), column_type_to_sql(col.column_type()));
 
             if col.is_primary_key() {
@@ -47,38 +49,41 @@ impl MigrationSchema {
 
         let needs_pk_constraint = primary_keys.len() > 1
             || (primary_keys.len() == 1
-                && !E::Column::all()
+                && !Table::Column::all()
                     .iter()
                     .find(|c| c.is_primary_key())
                     .map(|c| c.is_auto_increment())
                     .unwrap_or(false));
 
         if needs_pk_constraint && !primary_keys.is_empty() {
-            let has_inline_pk = E::Column::all().iter().any(|c| c.is_primary_key() && c.is_auto_increment());
+            let has_inline_pk = Table::Column::all().iter().any(|c| c.is_primary_key() && c.is_auto_increment());
 
             if !has_inline_pk {
                 column_defs.push(format!("PRIMARY KEY ({})", primary_keys.join(", ")));
             }
         }
 
-        format!("CREATE TABLE {}{} (\n  {}\n)", exists_clause, E::table_name(), column_defs.join(",\n  "))
+        format!("CREATE TABLE {}{} (\n  {}\n)", exists_clause, Table::table_name(), column_defs.join(",\n  "))
     }
 
-    pub async fn drop_table<E: TableTrait>(conn: &crate::Connection, if_exists: bool) -> Result<()> {
-        let sql = Self::drop_table_sql::<E>(if_exists);
+    #[tracing::instrument(skip(conn))]
+    pub async fn drop_table<Table: TableTrait>(conn: &crate::Connection, if_exists: bool) -> Result<()> {
+        let sql = Self::drop_table_sql::<Table>(if_exists);
         conn.execute(&sql, ()).await?;
         Ok(())
     }
 
-    pub fn drop_table_sql<E: TableTrait>(if_exists: bool) -> String {
+    #[tracing::instrument]
+    pub fn drop_table_sql<Table: TableTrait>(if_exists: bool) -> String {
         let exists_clause = if if_exists { "IF EXISTS " } else { "" };
-        format!("DROP TABLE {}{}", exists_clause, E::table_name())
+        format!("DROP TABLE {}{}", exists_clause, Table::table_name())
     }
 
-    pub async fn table_exists<E: TableTrait>(conn: &crate::Connection) -> Result<bool> {
+    #[tracing::instrument(skip(conn))]
+    pub async fn table_exists<Table: TableTrait>(conn: &crate::Connection) -> Result<bool> {
         let sql = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?";
 
-        let mut rows = conn.query(sql, [E::table_name()]).await?;
+        let mut rows = conn.query(sql, [Table::table_name()]).await?;
 
         if let Some(row) = rows.next().await? {
             let value = row.get_value(0)?;
@@ -270,7 +275,7 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
+    #[derive(Default, Debug)]
     struct TestTable;
 
     impl crate::TableTrait for TestTable {
@@ -432,7 +437,7 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
+    #[derive(Default, Debug)]
     struct UniqueTestTable;
 
     impl crate::TableTrait for UniqueTestTable {
@@ -560,7 +565,7 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
+    #[derive(Default, Debug)]
     struct DefaultTestTable;
 
     impl crate::TableTrait for DefaultTestTable {
@@ -684,7 +689,7 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
+    #[derive(Default, Debug)]
     struct CompositeTable;
 
     impl crate::TableTrait for CompositeTable {

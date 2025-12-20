@@ -9,6 +9,7 @@ use quote::quote;
 use syn::DeriveInput;
 use syn::Type;
 
+// Not yet implemented, ignored
 #[derive(Debug, Clone, Copy, Default, FromMeta)]
 enum OnDelete {
     Restrict,
@@ -19,6 +20,7 @@ enum OnDelete {
     None,
 }
 
+// Not yet implemented, ignored
 #[derive(Debug, Clone, Copy, Default, FromMeta)]
 enum OnUpdate {
     Restrict,
@@ -301,7 +303,7 @@ fn impl_entity(entity_info: &TableInfo) -> TokenStream2 {
         .map(|f| {
             let field_name = &f.field_name;
             quote! {
-                #field_name: tursorm::FieldValue::Change(record.#field_name.clone())
+                #field_name: tursorm::FieldValue::Set(record.#field_name.clone())
             }
         })
         .collect();
@@ -314,14 +316,14 @@ fn impl_entity(entity_info: &TableInfo) -> TokenStream2 {
             let col_name = &f.column_name;
             if f.is_auto_increment {
                 quote! {
-                    if let tursorm::FieldValue::Change(ref v) = self.#field_name {
+                    if let tursorm::FieldValue::Set(ref v) = self.#field_name {
                         columns.push(#col_name);
                         values.push(tursorm::IntoValue::into_value(v.clone()));
                     }
                 }
             } else {
                 quote! {
-                    if let tursorm::FieldValue::Change(ref v) = self.#field_name {
+                    if let tursorm::FieldValue::Set(ref v) = self.#field_name {
                         columns.push(#col_name);
                         values.push(tursorm::IntoValue::into_value(v.clone()));
                     }
@@ -338,7 +340,7 @@ fn impl_entity(entity_info: &TableInfo) -> TokenStream2 {
             let field_name = &f.field_name;
             let col_name = &f.column_name;
             quote! {
-                if let tursorm::FieldValue::Change(ref v) = self.#field_name {
+                if let tursorm::FieldValue::Set(ref v) = self.#field_name {
                     sets.push((#col_name, tursorm::IntoValue::into_value(v.clone())));
                 }
             }
@@ -591,8 +593,8 @@ fn impl_entity(entity_info: &TableInfo) -> TokenStream2 {
 
             fn get_primary_key_value(&self) -> Option<tursorm::Value> {
                 match &self.#pk_field_name {
-                    tursorm::FieldValue::Change(v) => Some(tursorm::IntoValue::into_value(v.clone())),
-                    tursorm::FieldValue::Keep => None,
+                    tursorm::FieldValue::Set(v) => Some(tursorm::IntoValue::into_value(v.clone())),
+                    tursorm::FieldValue::NotSet => None,
                 }
             }
 

@@ -8,6 +8,13 @@ repository = "https://github.com/blprnt-ai/tursoorm"
 keywords = ["turso", "orm", "database", "sqlite"]
 categories = ["database"]
 
+[features]
+default = ["with-arrays"]
+with-arrays = ["serde", "serde_json"]
+with-json = ["serde", "serde_json"]
+with-chrono = ["chrono"]
+with-uuid = ["uuid"]
+
 [dependencies]
 tursorm-macros = { path = "./tursorm-macros", version = "0.0.1" }
 
@@ -16,18 +23,15 @@ chrono = { version = "0.4.42", features = ["serde"], optional = true }
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 serde_json = { version = "1.0.145", optional = true }
 thiserror = "2.0.17"
+tracing = "0.1.44"
 turso = "0.3.2"
 turso_core = "0.3.2"
 uuid = { version = "1.19.0", features = ["v4", "serde"], optional = true }
 
-[features]
-default = ["with-arrays"]
-with-arrays = ["serde", "serde_json"]
-with-json = ["serde", "serde_json"]
-with-chrono = ["chrono"]
-with-uuid = ["uuid"]
-
 [dev-dependencies]
+fake = "4.4.0"
+ctor = "0.6.3"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
 [workspace]

@@ -6,12 +6,12 @@ use crate::TableTrait;
 use crate::Value;
 
 #[derive(Clone, Debug)]
-pub struct Delete<E: TableTrait> {
+pub struct Delete<Table: TableTrait> {
     conditions: Vec<Condition>,
-    _entity:    PhantomData<E>,
+    _entity:    PhantomData<Table>,
 }
 
-impl<E: TableTrait> Delete<E> {
+impl<Table: TableTrait> Delete<Table> {
     pub fn new() -> Self {
         Self { conditions: Vec::new(), _entity: PhantomData }
     }
@@ -22,7 +22,7 @@ impl<E: TableTrait> Delete<E> {
     }
 
     pub fn build(&self) -> (String, Vec<Value>) {
-        let mut sql = format!("DELETE FROM {}", E::table_name());
+        let mut sql = format!("DELETE FROM {}", Table::table_name());
         let mut params = Vec::new();
 
         if !self.conditions.is_empty() {
@@ -46,7 +46,7 @@ impl<E: TableTrait> Delete<E> {
     }
 }
 
-impl<E: TableTrait> Default for Delete<E> {
+impl<Table: TableTrait> Default for Delete<Table> {
     fn default() -> Self {
         Self::new()
     }

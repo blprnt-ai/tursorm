@@ -115,7 +115,7 @@ mod tests {
     use crate::FieldValue;
     use crate::FromRow;
     use crate::RecordTrait;
-    use crate::change;
+    use crate::set;
 
     #[derive(Clone, Debug, PartialEq)]
     struct TestRecord {
@@ -247,8 +247,7 @@ mod tests {
 
     #[test]
     fn test_update_new_with_change_set() {
-        let change_set =
-            TestChangeSet { id: change(1), name: change("Updated Name".to_string()), ..Default::default() };
+        let change_set = TestChangeSet { id: set(1), name: set("Updated Name".to_string()), ..Default::default() };
         let update = Update::<TestTable>::new(change_set);
         let result = update.build();
 
@@ -327,7 +326,7 @@ mod tests {
 
     #[test]
     fn test_update_change_set_without_pk_error() {
-        let change_set = TestChangeSet { name: change("Test".to_string()), ..Default::default() };
+        let change_set = TestChangeSet { name: set("Test".to_string()), ..Default::default() };
         let update = Update::<TestTable>::new(change_set);
         let result = update.build();
 
@@ -336,7 +335,7 @@ mod tests {
 
     #[test]
     fn test_update_change_set_without_pk_but_with_filter() {
-        let change_set = TestChangeSet { name: change("Test".to_string()), ..Default::default() };
+        let change_set = TestChangeSet { name: set("Test".to_string()), ..Default::default() };
         let update = Update::<TestTable>::new(change_set).filter(Condition::eq(TestColumn::Id, 1));
         let result = update.build();
 
@@ -372,9 +371,9 @@ mod tests {
     #[test]
     fn test_update_change_set_all_fields() {
         let change_set = TestChangeSet {
-            id:    change(1),
-            name:  change("Alice".to_string()),
-            email: change("alice@example.com".to_string()),
+            id:    set(1),
+            name:  set("Alice".to_string()),
+            email: set("alice@example.com".to_string()),
         };
         let update = Update::<TestTable>::new(change_set);
         let result = update.build();
@@ -389,7 +388,7 @@ mod tests {
 
     #[test]
     fn test_update_change_set_with_additional_sets() {
-        let change_set = TestChangeSet { id: change(1), name: change("Alice".to_string()), ..Default::default() };
+        let change_set = TestChangeSet { id: set(1), name: set("Alice".to_string()), ..Default::default() };
         let update = Update::<TestTable>::new(change_set).set(TestColumn::Email, "alice@new.com");
         let result = update.build();
 

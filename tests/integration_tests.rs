@@ -1,4 +1,26 @@
+use fake::Fake;
 use tursorm::prelude::*;
+
+macro_rules! before_all {
+    (init = $path:path) => {
+        #[allow(non_snake_case)]
+        #[ctor::ctor]
+        fn __BEFORE_ALL__() {
+            static ONCE: std::sync::Once = std::sync::Once::new();
+            ONCE.call_once(|| {
+                let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("tokio runtime");
+                rt.block_on(async { $path().await });
+            });
+        }
+    };
+}
+
+async fn init_tracing() {
+    let filter = tracing_subscriber::EnvFilter::new("warn").add_directive("tursorm=trace".parse().unwrap());
+    tracing_subscriber::fmt().with_env_filter(filter).compact().init();
+}
+
+before_all!(init = init_tracing);
 
 #[derive(Clone, Debug, PartialEq, Table)]
 #[tursorm(table_name = "users")]
@@ -34,7 +56,19 @@ pub struct Product {
 }
 
 async fn create_test_db() -> Connection {
-    let db = Builder::new_local(":memory:").build().await.unwrap();
+    let dir = fake::faker::name::en::FirstName().fake::<String>();
+    let sub_dir = fake::faker::name::en::FirstName().fake::<String>();
+    let tmp_dir = std::env::temp_dir().join("tursorm-test").join(dir).join(sub_dir);
+    std::fs::create_dir_all(&tmp_dir).unwrap();
+
+    let db_name = fake::faker::name::en::LastName().fake::<String>();
+
+    let mut db_path = tmp_dir.join(db_name);
+    db_path.set_extension("db");
+
+    tracing::info!("Creating test database in: {}", db_path.to_string_lossy());
+
+    let db = Builder::new_local(db_path.to_string_lossy().as_ref()).build().await.unwrap();
     db.connect().unwrap()
 }
 
@@ -94,9 +128,9 @@ async fn insert_sample_users(conn: &Connection) -> Vec<User> {
     let mut users = Vec::new();
     for (idx, (name, email, age)) in users_data.into_iter().enumerate() {
         let change_set = UserChangeSet {
-            name: change(name.to_string()),
-            email: change(email.to_string()),
-            age: change(age),
+            name: set(name.to_string()),
+            email: set(email.to_string()),
+            age: set(age),
             ..Default::default()
         };
 
@@ -150,8 +184,8 @@ mod schema_tests {
         MigrationSchema::create_table::<UserTable>(&conn, false).await.unwrap();
 
         let change_set = UserChangeSet {
-            name: change("Test".to_string()),
-            email: change("test@test.com".to_string()),
+            name: set("Test".to_string()),
+            email: set("test@test.com".to_string()),
             ..Default::default()
         };
         let result = Insert::<UserTable>::new(change_set).exec(&conn).await;
@@ -166,8 +200,8 @@ mod schema_tests {
         MigrationSchema::drop_table::<UserTable>(&conn, false).await.unwrap();
 
         let change_set = UserChangeSet {
-            name: change("Test".to_string()),
-            email: change("test@test.com".to_string()),
+            name: set("Test".to_string()),
+            email: set("test@test.com".to_string()),
             ..Default::default()
         };
         let result = Insert::<UserTable>::new(change_set).exec(&conn).await;
@@ -182,16 +216,20 @@ mod insert_tests {
     async fn test_insert_single_record() {
         let conn = create_test_db().await;
         create_users_table(&conn).await;
+        let name = "Alice";
+        let email = "alice@example.com";
+        let age = Some(30);
 
-        let change_set = UserChangeSet {
-            name: change("Alice".to_string()),
-            email: change("alice@example.com".to_string()),
-            age: change(Some(30)),
-            ..Default::default()
-        };
+        let mut user = UserChangeSet::default();
+        user.name = FieldValue::Set(name.to_string());
+        user.email = FieldValue::Set(email.to_string());
+        user.age = FieldValue::Set(age);
 
-        let affected = Insert::<UserTable>::new(change_set).exec(&conn).await.unwrap();
-        assert_eq!(affected, 1);
+        let user = user.insert(&conn).await.unwrap();
+
+        assert_eq!(user.name, name);
+        assert_eq!(user.email, email);
+        assert_eq!(user.age, age);
     }
 
     #[tokio::test]
@@ -200,8 +238,8 @@ mod insert_tests {
         create_users_table(&conn).await;
 
         let change_set = UserChangeSet {
-            name: change("Charlie".to_string()),
-            email: change("charlie@example.com".to_string()),
+            name: set("Charlie".to_string()),
+            email: set("charlie@example.com".to_string()),
             ..Default::default()
         };
 
@@ -210,8 +248,8 @@ mod insert_tests {
         assert_eq!(id, 1);
 
         let change_set2 = UserChangeSet {
-            name: change("Diana".to_string()),
-            email: change("diana@example.com".to_string()),
+            name: set("Diana".to_string()),
+            email: set("diana@example.com".to_string()),
             ..Default::default()
         };
 
@@ -227,18 +265,18 @@ mod insert_tests {
 
         let insert = Insert::<UserTable>::empty()
             .add(UserChangeSet {
-                name: change("User1".to_string()),
-                email: change("user1@test.com".to_string()),
+                name: set("User1".to_string()),
+                email: set("user1@test.com".to_string()),
                 ..Default::default()
             })
             .add(UserChangeSet {
-                name: change("User2".to_string()),
-                email: change("user2@test.com".to_string()),
+                name: set("User2".to_string()),
+                email: set("user2@test.com".to_string()),
                 ..Default::default()
             })
             .add(UserChangeSet {
-                name: change("User3".to_string()),
-                email: change("user3@test.com".to_string()),
+                name: set("User3".to_string()),
+                email: set("user3@test.com".to_string()),
                 ..Default::default()
             });
 
@@ -256,13 +294,13 @@ mod insert_tests {
 
         let change_sets = vec![
             UserChangeSet {
-                name: change("Batch1".to_string()),
-                email: change("batch1@test.com".to_string()),
+                name: set("Batch1".to_string()),
+                email: set("batch1@test.com".to_string()),
                 ..Default::default()
             },
             UserChangeSet {
-                name: change("Batch2".to_string()),
-                email: change("batch2@test.com".to_string()),
+                name: set("Batch2".to_string()),
+                email: set("batch2@test.com".to_string()),
                 ..Default::default()
             },
         ];
@@ -649,7 +687,7 @@ mod update_tests {
         let users = insert_sample_users(&conn).await;
 
         let mut change_set = UserChangeSet::from(users[0].clone());
-        change_set.name = change("Alice Updated".to_string());
+        change_set.name = set("Alice Updated".to_string());
 
         let affected = Update::<UserTable>::new(change_set).exec(&conn).await.unwrap();
         assert_eq!(affected, 1);
@@ -692,9 +730,9 @@ mod update_tests {
         let users = insert_sample_users(&conn).await;
 
         let mut change_set = UserChangeSet::from(users[0].clone());
-        change_set.name = change("New Name".to_string());
-        change_set.email = change("new@email.com".to_string());
-        change_set.age = change(Some(50));
+        change_set.name = set("New Name".to_string());
+        change_set.email = set("new@email.com".to_string());
+        change_set.age = set(Some(50));
 
         Update::<UserTable>::new(change_set).exec(&conn).await.unwrap();
 
@@ -717,7 +755,7 @@ mod update_tests {
         let users = insert_sample_users(&conn).await;
 
         let mut change_set = UserChangeSet::from(users[0].clone());
-        change_set.age = change(None);
+        change_set.age = set(None);
 
         Update::<UserTable>::new(change_set).exec(&conn).await.unwrap();
 
@@ -887,8 +925,8 @@ mod migration_tests {
         assert!(!diff.has_warnings);
 
         let change_set = UserChangeSet {
-            name: change("Test".to_string()),
-            email: change("test@test.com".to_string()),
+            name: set("Test".to_string()),
+            email: set("test@test.com".to_string()),
             ..Default::default()
         };
         let result = Insert::<UserTable>::new(change_set).exec(&conn).await;
@@ -918,8 +956,8 @@ mod migration_tests {
         assert!(diff.has_changes);
 
         let change_set = UserChangeSet {
-            name: change("Test".to_string()),
-            email: change("test@test.com".to_string()),
+            name: set("Test".to_string()),
+            email: set("test@test.com".to_string()),
             ..Default::default()
         };
         let result = Insert::<UserTable>::new(change_set).exec(&conn).await;
@@ -937,17 +975,17 @@ mod migration_tests {
         assert!(diff.has_changes);
 
         let user_change_set = UserChangeSet {
-            name: change("Test".to_string()),
-            email: change("test@test.com".to_string()),
+            name: set("Test".to_string()),
+            email: set("test@test.com".to_string()),
             ..Default::default()
         };
         assert!(Insert::<UserTable>::new(user_change_set).exec(&conn).await.is_ok());
 
         let post_change_set = PostChangeSet {
-            user_id: change(1),
-            title: change("Test Post".to_string()),
-            content: change("Content".to_string()),
-            published: change(1),
+            user_id: set(1),
+            title: set("Test Post".to_string()),
+            content: set("Content".to_string()),
+            published: set(1),
             ..Default::default()
         };
         assert!(Insert::<PostTable>::new(post_change_set).exec(&conn).await.is_ok());
@@ -1012,8 +1050,8 @@ mod error_tests {
         let conn = create_test_db().await;
 
         let change_set = UserChangeSet {
-            name: change("Test".to_string()),
-            email: change("test@test.com".to_string()),
+            name: set("Test".to_string()),
+            email: set("test@test.com".to_string()),
             ..Default::default()
         };
 
@@ -1034,7 +1072,7 @@ mod error_tests {
         let conn = create_test_db().await;
         create_users_table(&conn).await;
 
-        let change_set = UserChangeSet { name: change("Test".to_string()), ..Default::default() };
+        let change_set = UserChangeSet { name: set("Test".to_string()), ..Default::default() };
 
         let result = Update::<UserTable>::new(change_set).exec(&conn).await;
         assert!(result.is_err());
@@ -1115,10 +1153,10 @@ mod complex_query_tests {
 
         for i in 1..=3 {
             let post = PostChangeSet {
-                user_id: change(users[0].id),
-                title: change(format!("Post {}", i)),
-                content: change(format!("Content {}", i)),
-                published: change(1),
+                user_id: set(users[0].id),
+                title: set(format!("Post {}", i)),
+                content: set(format!("Content {}", i)),
+                published: set(1),
                 ..Default::default()
             };
             Insert::<PostTable>::new(post).exec(&conn).await.unwrap();
@@ -1126,10 +1164,10 @@ mod complex_query_tests {
 
         for i in 1..=2 {
             let post = PostChangeSet {
-                user_id: change(users[1].id),
-                title: change(format!("Bob's Post {}", i)),
-                content: change(format!("Bob's Content {}", i)),
-                published: change(0),
+                user_id: set(users[1].id),
+                title: set(format!("Bob's Post {}", i)),
+                content: set(format!("Bob's Content {}", i)),
+                published: set(0),
                 ..Default::default()
             };
             Insert::<PostTable>::new(post).exec(&conn).await.unwrap();
@@ -1191,10 +1229,10 @@ mod product_tests {
         create_products_table(&conn).await;
 
         let product = ProductChangeSet {
-            name: change("Widget".to_string()),
-            sku: change("WGT-001".to_string()),
-            price: change(19.99),
-            quantity: change(100),
+            name: set("Widget".to_string()),
+            sku: set("WGT-001".to_string()),
+            price: set(19.99),
+            quantity: set(100),
             ..Default::default()
         };
 
@@ -1213,7 +1251,7 @@ mod product_tests {
         assert_eq!(inserted.quantity, 100);
 
         let mut change_set = ProductChangeSet::from(inserted.clone());
-        change_set.quantity = change(50);
+        change_set.quantity = set(50);
 
         Update::<ProductTable>::new(change_set).exec(&conn).await.unwrap();
 
@@ -1247,10 +1285,10 @@ mod product_tests {
 
         for (name, sku, price, qty) in products {
             let change_set = ProductChangeSet {
-                name: change(name.to_string()),
-                sku: change(sku.to_string()),
-                price: change(price),
-                quantity: change(qty),
+                name: set(name.to_string()),
+                sku: set(sku.to_string()),
+                price: set(price),
+                quantity: set(qty),
                 ..Default::default()
             };
             Insert::<ProductTable>::new(change_set).exec(&conn).await.unwrap();

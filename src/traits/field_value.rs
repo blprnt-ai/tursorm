@@ -1,70 +1,70 @@
 #[derive(Clone, Debug)]
 pub enum FieldValue<T: PartialEq> {
-    Change(T),
-    Keep,
+    Set(T),
+    NotSet,
 }
 
-impl<T: PartialEq> PartialEq for FieldValue<T> {
+impl<V: PartialEq> PartialEq for FieldValue<V> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (FieldValue::Change(a), FieldValue::Change(b)) => a == b,
-            (FieldValue::Keep, FieldValue::Keep) => true,
+            (FieldValue::Set(a), FieldValue::Set(b)) => a == b,
+            (FieldValue::NotSet, FieldValue::NotSet) => true,
             _ => false,
         }
     }
 }
 
-impl<T: PartialEq> Default for FieldValue<T> {
+impl<V: PartialEq> Default for FieldValue<V> {
     fn default() -> Self {
-        FieldValue::Keep
+        FieldValue::NotSet
     }
 }
 
-impl<T: PartialEq> FieldValue<T> {
-    pub fn change(value: T) -> Self {
-        FieldValue::Change(value)
+impl<V: PartialEq> FieldValue<V> {
+    pub fn set(value: V) -> Self {
+        FieldValue::Set(value)
     }
 
     pub fn is_changed(&self) -> bool {
-        matches!(self, FieldValue::Change(_))
+        matches!(self, FieldValue::Set(_))
     }
 
-    pub fn is_keep(&self) -> bool {
-        matches!(self, FieldValue::Keep)
+    pub fn is_not_set(&self) -> bool {
+        matches!(self, FieldValue::NotSet)
     }
 
-    pub fn get(&self) -> Option<&T> {
+    pub fn get(&self) -> Option<&V> {
         match self {
-            FieldValue::Change(v) => Some(v),
-            FieldValue::Keep => None,
+            FieldValue::Set(v) => Some(v),
+            FieldValue::NotSet => None,
         }
     }
 
-    pub fn take(self) -> Option<T> {
+    pub fn take(self) -> Option<V> {
         match self {
-            FieldValue::Change(v) => Some(v),
-            FieldValue::Keep => None,
+            FieldValue::Set(v) => Some(v),
+            FieldValue::NotSet => None,
         }
     }
 
-    pub fn unwrap(self) -> T {
+    pub fn unwrap(self) -> V {
         match self {
-            FieldValue::Change(v) => v,
-            FieldValue::Keep => panic!("Called unwrap on Keep FieldValue"),
+            FieldValue::Set(v) => v,
+            FieldValue::NotSet => panic!("Called unwrap on NotSet FieldValue"),
         }
     }
 }
 
-impl<T: PartialEq> From<T> for FieldValue<T> {
-    fn from(value: T) -> Self {
-        FieldValue::Change(value)
+impl<V: PartialEq> From<V> for FieldValue<V> {
+    fn from(value: V) -> Self {
+        FieldValue::Set(value)
     }
 }
 
-pub fn change<T: PartialEq>(value: T) -> FieldValue<T> {
-    FieldValue::Change(value)
+pub fn set<V: PartialEq>(value: V) -> FieldValue<V> {
+    FieldValue::Set(value)
 }
 
-pub fn keep<T: PartialEq>() -> FieldValue<T> {
-    FieldValue::Keep
+pub fn not_set<V: PartialEq>() -> FieldValue<V> {
+    FieldValue::NotSet
 }

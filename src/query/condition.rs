@@ -9,59 +9,59 @@ pub struct Condition {
 }
 
 impl Condition {
-    pub fn eq<C: ColumnTrait, V: IntoValue>(column: C, value: V) -> Self {
+    pub fn eq<Column: ColumnTrait, V: IntoValue>(column: Column, value: V) -> Self {
         Self { sql: format!("{} = ?", column.name()), values: vec![value.into_value()] }
     }
 
-    pub fn ne<C: ColumnTrait, V: IntoValue>(column: C, value: V) -> Self {
+    pub fn ne<Column: ColumnTrait, V: IntoValue>(column: Column, value: V) -> Self {
         Self { sql: format!("{} != ?", column.name()), values: vec![value.into_value()] }
     }
 
-    pub fn gt<C: ColumnTrait, V: IntoValue>(column: C, value: V) -> Self {
+    pub fn gt<Column: ColumnTrait, V: IntoValue>(column: Column, value: V) -> Self {
         Self { sql: format!("{} > ?", column.name()), values: vec![value.into_value()] }
     }
 
-    pub fn gte<C: ColumnTrait, V: IntoValue>(column: C, value: V) -> Self {
+    pub fn gte<Column: ColumnTrait, V: IntoValue>(column: Column, value: V) -> Self {
         Self { sql: format!("{} >= ?", column.name()), values: vec![value.into_value()] }
     }
 
-    pub fn lt<C: ColumnTrait, V: IntoValue>(column: C, value: V) -> Self {
+    pub fn lt<Column: ColumnTrait, V: IntoValue>(column: Column, value: V) -> Self {
         Self { sql: format!("{} < ?", column.name()), values: vec![value.into_value()] }
     }
 
-    pub fn lte<C: ColumnTrait, V: IntoValue>(column: C, value: V) -> Self {
+    pub fn lte<Column: ColumnTrait, V: IntoValue>(column: Column, value: V) -> Self {
         Self { sql: format!("{} <= ?", column.name()), values: vec![value.into_value()] }
     }
 
-    pub fn like<C: ColumnTrait>(column: C, pattern: impl Into<String>) -> Self {
+    pub fn like<Column: ColumnTrait>(column: Column, pattern: impl Into<String>) -> Self {
         Self { sql: format!("{} LIKE ?", column.name()), values: vec![Value::Text(pattern.into())] }
     }
 
-    pub fn not_like<C: ColumnTrait>(column: C, pattern: impl Into<String>) -> Self {
+    pub fn not_like<Column: ColumnTrait>(column: Column, pattern: impl Into<String>) -> Self {
         Self { sql: format!("{} NOT LIKE ?", column.name()), values: vec![Value::Text(pattern.into())] }
     }
 
-    pub fn contains<C: ColumnTrait>(column: C, value: impl Into<String>) -> Self {
+    pub fn contains<Column: ColumnTrait>(column: Column, value: impl Into<String>) -> Self {
         Self { sql: format!("{} LIKE ?", column.name()), values: vec![Value::Text(format!("%{}%", value.into()))] }
     }
 
-    pub fn starts_with<C: ColumnTrait>(column: C, value: impl Into<String>) -> Self {
+    pub fn starts_with<Column: ColumnTrait>(column: Column, value: impl Into<String>) -> Self {
         Self { sql: format!("{} LIKE ?", column.name()), values: vec![Value::Text(format!("{}%", value.into()))] }
     }
 
-    pub fn ends_with<C: ColumnTrait>(column: C, value: impl Into<String>) -> Self {
+    pub fn ends_with<Column: ColumnTrait>(column: Column, value: impl Into<String>) -> Self {
         Self { sql: format!("{} LIKE ?", column.name()), values: vec![Value::Text(format!("%{}", value.into()))] }
     }
 
-    pub fn is_null<C: ColumnTrait>(column: C) -> Self {
+    pub fn is_null<Column: ColumnTrait>(column: Column) -> Self {
         Self { sql: format!("{} IS NULL", column.name()), values: vec![] }
     }
 
-    pub fn is_not_null<C: ColumnTrait>(column: C) -> Self {
+    pub fn is_not_null<Column: ColumnTrait>(column: Column) -> Self {
         Self { sql: format!("{} IS NOT NULL", column.name()), values: vec![] }
     }
 
-    pub fn is_in<C: ColumnTrait, V: IntoValue>(column: C, values: Vec<V>) -> Self {
+    pub fn is_in<Column: ColumnTrait, V: IntoValue>(column: Column, values: Vec<V>) -> Self {
         let placeholders: Vec<&str> = values.iter().map(|_| "?").collect();
         Self {
             sql:    format!("{} IN ({})", column.name(), placeholders.join(", ")),
@@ -69,7 +69,7 @@ impl Condition {
         }
     }
 
-    pub fn not_in<C: ColumnTrait, V: IntoValue>(column: C, values: Vec<V>) -> Self {
+    pub fn not_in<Column: ColumnTrait, V: IntoValue>(column: Column, values: Vec<V>) -> Self {
         let placeholders: Vec<&str> = values.iter().map(|_| "?").collect();
         Self {
             sql:    format!("{} NOT IN ({})", column.name(), placeholders.join(", ")),
@@ -77,11 +77,11 @@ impl Condition {
         }
     }
 
-    pub fn between<C: ColumnTrait, V: IntoValue>(column: C, low: V, high: V) -> Self {
+    pub fn between<Column: ColumnTrait, V: IntoValue>(column: Column, low: V, high: V) -> Self {
         Self { sql: format!("{} BETWEEN ? AND ?", column.name()), values: vec![low.into_value(), high.into_value()] }
     }
 
-    pub fn not_between<C: ColumnTrait, V: IntoValue>(column: C, low: V, high: V) -> Self {
+    pub fn not_between<Column: ColumnTrait, V: IntoValue>(column: Column, low: V, high: V) -> Self {
         Self {
             sql:    format!("{} NOT BETWEEN ? AND ?", column.name()),
             values: vec![low.into_value(), high.into_value()],
@@ -144,11 +144,11 @@ pub struct OrderBy {
 }
 
 impl OrderBy {
-    pub fn asc<C: ColumnTrait>(column: C) -> Self {
+    pub fn asc<Column: ColumnTrait>(column: Column) -> Self {
         Self { column: column.name().to_string(), direction: Order::Asc }
     }
 
-    pub fn desc<C: ColumnTrait>(column: C) -> Self {
+    pub fn desc<Column: ColumnTrait>(column: Column) -> Self {
         Self { column: column.name().to_string(), direction: Order::Desc }
     }
 }

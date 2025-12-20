@@ -7,19 +7,18 @@ use crate::Order;
 use crate::OrderBy;
 use crate::Result;
 use crate::TableTrait;
-use crate::Value;
 
 #[derive(Clone, Debug)]
-pub struct Select<E: TableTrait> {
+pub struct Select<Table: TableTrait> {
     conditions: Vec<Condition>,
     order_by:   Vec<OrderBy>,
     limit:      Option<usize>,
     offset:     Option<usize>,
     columns:    Option<Vec<String>>,
-    _entity:    PhantomData<E>,
+    _entity:    PhantomData<Table>,
 }
 
-impl<E: TableTrait> Select<E> {
+impl<Table: TableTrait> Select<Table> {
     pub fn new() -> Self {
         Self {
             conditions: Vec::new(),
@@ -40,22 +39,22 @@ impl<E: TableTrait> Select<E> {
         self.filter(condition)
     }
 
-    pub fn columns<C: ColumnTrait>(mut self, columns: Vec<C>) -> Self {
+    pub fn columns<Column: ColumnTrait>(mut self, columns: Vec<Column>) -> Self {
         self.columns = Some(columns.iter().map(|c| c.name().to_string()).collect());
         self
     }
 
-    pub fn order_by_asc<C: ColumnTrait>(mut self, column: C) -> Self {
+    pub fn order_by_asc<Column: ColumnTrait>(mut self, column: Column) -> Self {
         self.order_by.push(OrderBy::asc(column));
         self
     }
 
-    pub fn order_by_desc<C: ColumnTrait>(mut self, column: C) -> Self {
+    pub fn order_by_desc<Column: ColumnTrait>(mut self, column: Column) -> Self {
         self.order_by.push(OrderBy::desc(column));
         self
     }
 
-    pub fn order_by<C: ColumnTrait>(mut self, column: C, direction: Order) -> Self {
+    pub fn order_by<Column: ColumnTrait>(mut self, column: Column, direction: Order) -> Self {
         self.order_by.push(OrderBy { column: column.name().to_string(), direction });
         self
     }
@@ -70,10 +69,10 @@ impl<E: TableTrait> Select<E> {
         self
     }
 
-    pub fn build(&self) -> (String, Vec<Value>) {
-        let columns = self.columns.as_ref().map(|c| c.join(", ")).unwrap_or_else(|| E::all_columns().to_string());
+    pub fn build(&self) -> (String, Vec<turso::Value>) {
+        let columns = self.columns.as_ref().map(|c| c.join(", ")).unwrap_or_else(|| Table::all_columns().to_string());
 
-        let mut sql = format!("SELECT {} FROM {}", columns, E::table_name());
+        let mut sql = format!("SELECT {} FROM {}", columns, Table::table_name());
         let mut params = Vec::new();
 
         if !self.conditions.is_empty() {
@@ -104,7 +103,7 @@ impl<E: TableTrait> Select<E> {
         (sql, params)
     }
 
-    pub async fn all(self, conn: &crate::Connection) -> Result<Vec<E::Record>> {
+    pub async fn all(self, conn: &crate::Connection) -> Result<Vec<Table::Record>> {
         let (sql, params) = self.build();
         let params: Vec<turso::Value> = params.into_iter().collect();
 
@@ -112,24 +111,27 @@ impl<E: TableTrait> Select<E> {
         let mut results = Vec::new();
 
         while let Some(row) = rows.next().await? {
-            results.push(E::Record::from_row(&row)?);
+            results.push(Table::Record::from_row(&row)?);
         }
 
         Ok(results)
     }
 
-    pub async fn one(self, conn: &crate::Connection) -> Result<Option<E::Record>> {
+    pub async fn one(self, conn: &crate::Connection) -> Result<Option<Table::Record>> {
         let query = self.limit(1);
         let (sql, params) = query.build();
-        let params: Vec<turso::Value> = params.into_iter().collect();
+        tracing::trace!("SQL: {}", sql);
+        tracing::trace!("Params: {:?}", params);
 
         let mut rows = conn.query(&sql, params).await?;
+        let row = rows.next().await?;
+        tracing::trace!("Row: {:?}", row);
 
-        if let Some(row) = rows.next().await? { Ok(Some(E::Record::from_row(&row)?)) } else { Ok(None) }
+        row.map(|r| Table::Record::from_row(&r)).transpose()
     }
 
     pub async fn count(self, conn: &crate::Connection) -> Result<i64> {
-        let mut sql = format!("SELECT COUNT(*) FROM {}", E::table_name());
+        let mut sql = format!("SELECT COUNT(*) FROM {}", Table::table_name());
         let mut params = Vec::new();
 
         if !self.conditions.is_empty() {
@@ -148,7 +150,7 @@ impl<E: TableTrait> Select<E> {
         if let Some(row) = rows.next().await? {
             let value = row.get_value(0)?;
             match value {
-                Value::Integer(count) => Ok(count),
+                turso::Value::Integer(count) => Ok(count),
                 _ => Ok(0),
             }
         } else {
@@ -162,7 +164,7 @@ impl<E: TableTrait> Select<E> {
     }
 }
 
-impl<E: TableTrait> Default for Select<E> {
+impl<Table: TableTrait> Default for Select<Table> {
     fn default() -> Self {
         Self::new()
     }
@@ -189,8 +191,8 @@ mod tests {
     impl RecordTrait for TestRecord {
         type Table = TestTable;
 
-        fn get_primary_key_value(&self) -> Value {
-            Value::Integer(self.id)
+        fn get_primary_key_value(&self) -> turso::Value {
+            turso::Value::Integer(self.id)
         }
     }
 
@@ -210,7 +212,7 @@ mod tests {
     impl ChangeSetTrait for TestChangeSet {
         type Table = TestTable;
 
-        fn get_insert_columns_and_values(&self) -> (Vec<&'static str>, Vec<Value>) {
+        fn get_insert_columns_and_values(&self) -> (Vec<&'static str>, Vec<turso::Value>) {
             let mut columns = Vec::new();
             let mut values = Vec::new();
             if self.name.is_changed() {
@@ -224,7 +226,7 @@ mod tests {
             (columns, values)
         }
 
-        fn get_update_sets(&self) -> Vec<(&'static str, Value)> {
+        fn get_update_sets(&self) -> Vec<(&'static str, turso::Value)> {
             let mut sets = Vec::new();
             if self.name.is_changed() {
                 sets.push(("name", self.name.clone().take().unwrap().into_value()));
@@ -235,8 +237,8 @@ mod tests {
             sets
         }
 
-        fn get_primary_key_value(&self) -> Option<Value> {
-            self.id.clone().take().map(|v| Value::Integer(v))
+        fn get_primary_key_value(&self) -> Option<turso::Value> {
+            self.id.clone().take().map(|v| turso::Value::Integer(v))
         }
 
         fn primary_key_column() -> &'static str {
@@ -331,7 +333,7 @@ mod tests {
 
         assert_eq!(sql, "SELECT id, name, email, age FROM test_users WHERE (id = ?)");
         assert_eq!(params.len(), 1);
-        assert_eq!(params[0], Value::Integer(1));
+        assert_eq!(params[0], turso::Value::Integer(1));
     }
 
     #[test]

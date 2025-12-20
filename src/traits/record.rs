@@ -3,7 +3,7 @@ use crate::Condition;
 use crate::Delete;
 use crate::value::Value;
 
-pub trait RecordTrait: Clone + Send + Sync {
+pub trait RecordTrait: std::fmt::Debug + Clone + Send + Sync {
     type Table: TableTrait;
 
     fn get_primary_key_value(&self) -> Value;
@@ -15,7 +15,9 @@ pub trait RecordTrait: Clone + Send + Sync {
 }
 
 pub trait RecordDeleteExt: RecordTrait {
+    #[tracing::instrument(skip(self))]
     fn delete(self) -> Delete<Self::Table> {
+        tracing::trace!("Deleting record");
         Delete::new().filter(Condition::eq(Self::Table::primary_key(), self.get_primary_key_value()))
     }
 }

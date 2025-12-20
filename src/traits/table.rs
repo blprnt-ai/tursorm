@@ -7,7 +7,7 @@ use crate::Delete;
 use crate::IntoValue;
 use crate::Select;
 
-pub trait TableTrait: Default + Send + Sync + 'static {
+pub trait TableTrait: std::fmt::Debug + Default + Send + Sync + 'static {
     type Record: RecordTrait<Table = Self> + FromRow + Send;
 
     type Column: ColumnTrait;
@@ -26,10 +26,12 @@ pub trait TableTrait: Default + Send + Sync + 'static {
 }
 
 pub trait TableSelectExt: TableTrait {
+    #[tracing::instrument]
     fn find() -> Select<Self> {
         Select::new()
     }
 
+    #[tracing::instrument]
     fn find_by_id<V: crate::value::IntoValue>(id: V) -> Select<Self>
     where Self::Column: ColumnTrait {
         Select::new().filter(Condition::eq(<Self>::primary_key(), id))
@@ -39,15 +41,18 @@ pub trait TableSelectExt: TableTrait {
 impl<Table: TableTrait> TableSelectExt for Table {}
 
 pub trait TableDeleteExt: TableTrait {
+    #[tracing::instrument]
     fn delete_many(records: Vec<Self::Record>) -> Delete<Self> {
         Delete::new()
             .filter(Condition::is_in(Self::primary_key(), records.iter().map(|m| m.get_primary_key_value()).collect()))
     }
 
+    #[tracing::instrument]
     fn delete_many_by_ids<V: IntoValue>(ids: Vec<V>) -> Delete<Self> {
         Delete::new().filter(Condition::is_in(Self::primary_key(), ids))
     }
 
+    #[tracing::instrument]
     fn truncate() -> Delete<Self> {
         Delete::new()
     }
