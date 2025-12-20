@@ -41,6 +41,8 @@ impl MigrationSchema {
             }
 
             if let Some(default) = col.default_value() {
+                let default = default_value_to_sql(default, col.column_type());
+
                 def.push_str(&format!(" DEFAULT {}", default));
             }
 
@@ -105,6 +107,34 @@ fn column_type_to_sql(col_type: crate::value::ColumnType) -> &'static str {
         crate::value::ColumnType::Blob => "BLOB",
         crate::value::ColumnType::Null => "NULL",
     }
+}
+
+fn default_value_to_sql(default: &str, col_type: crate::value::ColumnType) -> String {
+    let default_result = match col_type {
+        crate::value::ColumnType::Integer => parse_default_to_i64(default).map(|v| v.to_string()),
+        crate::value::ColumnType::Float => parse_default_to_f64(default).map(|v| v.to_string()),
+        crate::value::ColumnType::Text => parse_default_to_text(default),
+        crate::value::ColumnType::Blob => parse_default_to_hex_str(default),
+        _ => None,
+    };
+
+    default_result.unwrap_or(default.to_string())
+}
+
+fn parse_default_to_i64(default: &str) -> Option<i64> {
+    default.parse::<i64>().ok()
+}
+
+fn parse_default_to_f64(default: &str) -> Option<f64> {
+    default.parse::<f64>().ok()
+}
+
+fn parse_default_to_text(default: &str) -> Option<String> {
+    Some(default.to_string())
+}
+
+fn parse_default_to_hex_str(default: &str) -> Option<String> {
+    if default.starts_with("X'") && default.ends_with("'") { Some(default.to_string()) } else { None }
 }
 
 #[cfg(test)]
