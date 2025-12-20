@@ -111,7 +111,12 @@ impl<Table: TableTrait> Select<Table> {
         let mut results = Vec::new();
 
         while let Some(row) = rows.next().await? {
-            results.push(Table::Record::from_row(&row)?);
+            let Ok(parsed_row) = Table::Record::from_row(&row) else {
+                tracing::warn!("Failed to parse row: {:?}", row);
+                continue;
+            };
+
+            results.push(parsed_row);
         }
 
         Ok(results)
