@@ -9,7 +9,7 @@ keywords = ["turso", "orm", "database", "sqlite"]
 categories = ["database"]
 
 [features]
-default = ["with-arrays"]
+default = ["with-arrays", "serde"]
 with-arrays = ["serde", "serde_json"]
 with-json = ["serde", "serde_json"]
 with-chrono = ["chrono"]

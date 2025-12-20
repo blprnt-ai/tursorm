@@ -31,6 +31,7 @@ pub struct DbTableInfo {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SchemaChange {
     CreateTable { table_name: String, sql: String },
 
@@ -85,9 +86,14 @@ impl SchemaChange {
             SchemaChange::Warning { .. } => vec![],
         }
     }
+
+    pub fn is_create_table(&self) -> bool {
+        matches!(self, SchemaChange::CreateTable { .. } | SchemaChange::RecreateTable { .. })
+    }
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SchemaDiff {
     pub changes: Vec<SchemaChange>,
 

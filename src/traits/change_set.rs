@@ -44,11 +44,17 @@ pub trait ChangeSetTrait: std::fmt::Debug + Default + Clone + Send + Sync + Size
     #[tracing::instrument(skip(self, conn))]
     async fn update(self, conn: &crate::Connection) -> Result<<Self::Table as TableTrait>::Record>
     where <Self::Table as TableTrait>::Record: Send {
-        tracing::trace!("Updating record");
-        let record = crate::query::Update::<Self::Table>::new(self).exec_with_returning(conn).await?;
+        let pk_value = self.get_primary_key_value().ok_or(crate::error::Error::PrimaryKeyNotSet)?;
 
-        tracing::trace!("Record: {:?}", record);
-        Ok(record)
+        tracing::trace!("Updating record");
+        crate::query::Update::<Self::Table>::new(self).exec(conn).await?;
+
+        let record = crate::query::Select::<Self::Table>::new()
+            .filter(crate::query::Condition::eq(Self::Table::primary_key(), pk_value))
+            .one(conn)
+            .await?;
+
+        record.ok_or(crate::error::Error::NoRowsAffected)
     }
 
     #[tracing::instrument(skip(self, conn))]
