@@ -7,8 +7,8 @@ pub enum Error {
     #[error("Database error: {0}")]
     Database(#[from] turso::Error),
 
-    #[error("Type conversion error: expected {expected}, got {actual}")]
-    TypeConversion { expected: &'static str, actual: String },
+    #[error("Type conversion error: expected {expected}, got {actual}. Error: {error}")]
+    TypeConversion { expected: &'static str, actual: String, error: String },
 
     #[error("Unexpected null value for non-nullable field")]
     UnexpectedNull,
@@ -36,7 +36,11 @@ mod tests {
 
     #[test]
     fn test_error_display_type_conversion() {
-        let err = Error::TypeConversion { expected: "Integer", actual: "Text(hello)".to_string() };
+        let err = Error::TypeConversion {
+            expected: "Integer",
+            actual:   "Text(hello)".to_string(),
+            error:    "Invalid UTF-8 sequence".to_string(),
+        };
         let display = format!("{}", err);
         assert!(display.contains("Type conversion error"));
         assert!(display.contains("Integer"));
@@ -104,8 +108,16 @@ mod tests {
 
     #[test]
     fn test_error_type_conversion_variants() {
-        let err1 = Error::TypeConversion { expected: "Integer", actual: "Text".to_string() };
-        let err2 = Error::TypeConversion { expected: "Real", actual: "Blob".to_string() };
+        let err1 = Error::TypeConversion {
+            expected: "Integer",
+            actual:   "Text".to_string(),
+            error:    "Invalid UTF-8 sequence".to_string(),
+        };
+        let err2 = Error::TypeConversion {
+            expected: "Real",
+            actual:   "Blob".to_string(),
+            error:    "Invalid UTF-8 sequence".to_string(),
+        };
 
         assert!(format!("{}", err1).contains("Integer"));
         assert!(format!("{}", err2).contains("Real"));

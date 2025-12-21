@@ -20,9 +20,14 @@ impl Connection {
         Self { inner, opts }
     }
 
-    pub async fn begin(&mut self) -> turso::Result<turso::transaction::Transaction<'_>> {
-        self.inner.transaction().await
-    }
+    // TODO: Investigate failures when using transactions
+    //
+    // PANIC:
+    // turso_core-0.3.2/storage/wal.rs:986:13:
+    // must have a read transaction to begin a write transaction
+    // pub async fn begin(&mut self) -> turso::Result<turso::transaction::Transaction<'_>> {
+    //     self.inner.transaction().await
+    // }
 
     pub fn is_mvcc_enabled(&self) -> bool {
         self.opts.enable_mvcc

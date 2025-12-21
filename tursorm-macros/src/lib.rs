@@ -273,13 +273,27 @@ fn impl_entity(entity_info: &TableInfo) -> TokenStream2 {
         .enumerate()
         .map(|(idx, f)| {
             let field_name = &f.field_name;
+            let expected = rust_type_to_column_type_label(&f.field_type, f.is_optional);
+
             if f.is_optional {
                 quote! {
-                    #field_name: tursorm::FromValue::from_value_opt(row.get_value(#idx)?)?
+                    #field_name: tursorm::FromValue::from_value_opt(
+                        row.get_value(#idx)?
+                    ).map_err(|e| tursorm::Error::TypeConversion {
+                        expected: #expected,
+                        actual: format!("{:?}", e),
+                        error: "Conversion error".to_string()
+                    })?
                 }
             } else {
                 quote! {
-                    #field_name: tursorm::FromValue::from_value(row.get_value(#idx)?)?
+                    #field_name: tursorm::FromValue::from_value(
+                        row.get_value(#idx).map_err(|e| tursorm::Error::TypeConversion {
+                            expected: #expected,
+                            actual: format!("{:?}", e),
+                            error: "Conversion error".to_string()
+                        })?
+                    )?
                 }
             }
         })
@@ -646,6 +660,39 @@ fn rust_type_to_column_type(ty: &Type, is_optional: bool) -> TokenStream2 {
     };
 
     base_type
+}
+
+fn rust_type_to_column_type_label(ty: &Type, is_optional: bool) -> String {
+    let inner_type = if is_optional { extract_option_inner_type(ty).unwrap_or(ty) } else { ty };
+
+    let base_type = match inner_type {
+        Type::Path(type_path) => {
+            let segment = type_path.path.segments.last().unwrap();
+            let type_name = segment.ident.to_string();
+            match type_name.as_str() {
+                "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" => "Integer",
+                "f32" | "f64" => "Real",
+                "String" | "str" => "Text",
+                "Vec" => {
+                    if let Some(inner) = extract_vec_inner_type(inner_type) {
+                        if let Type::Path(inner_path) = inner {
+                            if let Some(seg) = inner_path.path.segments.last() {
+                                if seg.ident == "u8" {
+                                    return "Blob".to_string();
+                                }
+                            }
+                        }
+                    }
+                    "Text"
+                }
+                "bool" => "Integer",
+                _ => "Text",
+            }
+        }
+        _ => "Text",
+    };
+
+    base_type.to_string()
 }
 
 fn extract_option_inner_type(ty: &Type) -> Option<&Type> {

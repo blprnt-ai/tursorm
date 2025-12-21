@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::marker::PhantomData;
 
 use crate::ColumnTrait;
@@ -111,12 +112,22 @@ impl<Table: TableTrait> Select<Table> {
         let mut results = Vec::new();
 
         while let Some(row) = rows.next().await? {
-            let Ok(parsed_row) = Table::Record::from_row(&row) else {
-                tracing::warn!("Failed to parse row: {:?}", row);
-                continue;
-            };
+            match Table::Record::from_row(&row) {
+                Ok(parsed_row) => results.push(parsed_row),
+                Err(e) => {
+                    let values = self.from_raw_row(&row)?;
 
-            results.push(parsed_row);
+                    #[cfg(feature = "serde")]
+                    tracing::warn!("Failed to parse row: {}", serde_json::to_string_pretty(&values)?);
+
+                    #[cfg(not(feature = "serde"))]
+                    tracing::warn!("Failed to parse row: {:?}", values);
+
+                    tracing::warn!("{}", e.to_string());
+
+                    continue;
+                }
+            }
         }
 
         Ok(results)
@@ -166,6 +177,59 @@ impl<Table: TableTrait> Select<Table> {
     pub async fn exists(self, conn: &crate::Connection) -> Result<bool> {
         let count = self.limit(1).count(conn).await?;
         Ok(count > 0)
+    }
+
+    #[cfg(feature = "serde")]
+    fn from_raw_row(&self, row: &turso::Row) -> Result<serde_json::Value> {
+        use serde_json::json;
+
+        let column_names = Table::all_columns().split(", ").collect::<Vec<&str>>();
+        let column_count = row.column_count();
+        let mut values = HashMap::new();
+
+        for i in 0..column_count {
+            use serde_json::json;
+
+            let column_name =
+                if let Some(column) = &column_names.get(i) { column.to_string() } else { format!("column_{}", i) };
+            let value = match row.get_value(i)? {
+                turso::Value::Integer(count) => json!(count),
+                turso::Value::Real(real) => json!(real),
+                turso::Value::Text(text) => match serde_json::from_str(&text) {
+                    Ok(value) => value,
+                    Err(_) => json!(text),
+                },
+                turso::Value::Blob(blob) => json!(blob),
+                turso::Value::Null => json!(null),
+            };
+
+            values.insert(column_name, value);
+        }
+
+        Ok(json!(values))
+    }
+
+    #[cfg(not(feature = "serde"))]
+    fn from_raw_row(&self, row: &turso::Row) -> Result<HashMap<String, String>> {
+        let column_names = self.columns.as_ref().cloned().unwrap_or_default();
+        let column_count = row.column_count();
+        let mut values = HashMap::new();
+
+        for i in 0..column_count {
+            let column_name =
+                if let Some(column) = &column_names.get(i) { column.to_string() } else { format!("column_{}", i) };
+            let value = match row.get_value(i)? {
+                turso::Value::Integer(count) => format!("INTEGER: {}", count),
+                turso::Value::Real(real) => format!("REAL: {}", real),
+                turso::Value::Text(text) => format!("TEXT: {}", text),
+                turso::Value::Blob(blob) => format!("BLOB: {:?}", blob),
+                turso::Value::Null => format!("NULL"),
+            };
+
+            values.insert(column_name, value.to_string());
+        }
+
+        Ok(values)
     }
 }
 

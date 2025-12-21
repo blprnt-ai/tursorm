@@ -148,7 +148,11 @@ impl FromValue for i64 {
             Value::Integer(v) => Ok(v),
             Value::Real(v) => Ok(v as i64),
             Value::Null => Err(Error::UnexpectedNull),
-            other => Err(Error::TypeConversion { expected: "Integer", actual: format!("{:?}", other) }),
+            other => Err(Error::TypeConversion {
+                expected: "Integer",
+                actual:   format!("{:?}", other),
+                error:    "Expected integer".to_string(),
+            }),
         }
     }
 }
@@ -213,7 +217,11 @@ impl FromValue for f64 {
             Value::Real(v) => Ok(v),
             Value::Integer(v) => Ok(v as f64),
             Value::Null => Err(Error::UnexpectedNull),
-            other => Err(Error::TypeConversion { expected: "Real", actual: format!("{:?}", other) }),
+            other => Err(Error::TypeConversion {
+                expected: "Real",
+                actual:   format!("{:?}", other),
+                error:    "Expected real number".to_string(),
+            }),
         }
     }
 }
@@ -229,7 +237,11 @@ impl FromValue for String {
         match value {
             Value::Text(v) => Ok(v),
             Value::Null => Err(Error::UnexpectedNull),
-            other => Err(Error::TypeConversion { expected: "Text", actual: format!("{:?}", other) }),
+            other => Err(Error::TypeConversion {
+                expected: "Text",
+                actual:   format!("{:?}", other),
+                error:    "Expected text".to_string(),
+            }),
         }
     }
 }
@@ -239,7 +251,11 @@ impl FromValue for Vec<u8> {
         match value {
             Value::Blob(v) => Ok(v),
             Value::Null => Err(Error::UnexpectedNull),
-            other => Err(Error::TypeConversion { expected: "Blob", actual: format!("{:?}", other) }),
+            other => Err(Error::TypeConversion {
+                expected: "Blob",
+                actual:   format!("{:?}", other),
+                error:    "Expected blob".to_string(),
+            }),
         }
     }
 }
@@ -249,7 +265,11 @@ impl FromValue for bool {
         match value {
             Value::Integer(v) => Ok(v != 0),
             Value::Null => Err(Error::UnexpectedNull),
-            other => Err(Error::TypeConversion { expected: "Integer (boolean)", actual: format!("{:?}", other) }),
+            other => Err(Error::TypeConversion {
+                expected: "Integer (boolean)",
+                actual:   format!("{:?}", other),
+                error:    "Expected integer (boolean)".to_string(),
+            }),
         }
     }
 }
@@ -364,15 +384,22 @@ mod uuid_impl {
     impl FromValue for Uuid {
         fn from_value(value: Value) -> Result<Self> {
             match value {
-                Value::Text(s) => {
-                    Uuid::parse_str(&s).map_err(|_| Error::TypeConversion { expected: "UUID", actual: s })
-                }
-                Value::Blob(b) => Uuid::from_slice(&b)
-                    .map_err(|_| Error::TypeConversion { expected: "UUID", actual: format!("{:?}", b) }),
+                Value::Text(s) => Uuid::parse_str(&s).map_err(|_| Error::TypeConversion {
+                    expected: "UUID",
+                    actual:   s,
+                    error:    "Expected UUID".to_string(),
+                }),
+                Value::Blob(b) => Uuid::from_slice(&b).map_err(|_| Error::TypeConversion {
+                    expected: "UUID",
+                    actual:   format!("{:?}", b),
+                    error:    "Expected UUID".to_string(),
+                }),
                 Value::Null => Err(Error::UnexpectedNull),
-                other => {
-                    Err(Error::TypeConversion { expected: "Text or Blob (UUID)", actual: format!("{:?}", other) })
-                }
+                other => Err(Error::TypeConversion {
+                    expected: "Text or Blob (UUID)",
+                    actual:   format!("{:?}", other),
+                    error:    "Expected UUID".to_string(),
+                }),
             }
         }
     }
@@ -409,7 +436,11 @@ mod json_impl {
                     Ok(Json(parsed))
                 }
                 Value::Null => Err(Error::UnexpectedNull),
-                other => Err(Error::TypeConversion { expected: "Text (JSON)", actual: format!("{:?}", other) }),
+                other => Err(Error::TypeConversion {
+                    expected: "Text (JSON)",
+                    actual:   format!("{:?}", other),
+                    error:    "Expected JSON".to_string(),
+                }),
             }
         }
     }
@@ -428,7 +459,11 @@ mod json_impl {
                     Ok(parsed)
                 }
                 Value::Null => Ok(JsonValue::Null),
-                other => Err(Error::TypeConversion { expected: "Text (JSON)", actual: format!("{:?}", other) }),
+                other => Err(Error::TypeConversion {
+                    expected: "Text (JSON)",
+                    actual:   format!("{:?}", other),
+                    error:    "Expected JSON".to_string(),
+                }),
             }
         }
     }
@@ -455,7 +490,11 @@ mod arrays_impl {
                     Ok(parsed)
                 }
                 Value::Null => Err(Error::UnexpectedNull),
-                other => Err(Error::TypeConversion { expected: "Text (JSON array)", actual: format!("{:?}", other) }),
+                other => Err(Error::TypeConversion {
+                    expected: "Text (JSON array)",
+                    actual:   format!("{:?}", other),
+                    error:    "Expected JSON array".to_string(),
+                }),
             }
         }
     }
@@ -477,7 +516,11 @@ mod arrays_impl {
                     Ok(parsed)
                 }
                 Value::Null => Err(Error::UnexpectedNull),
-                other => Err(Error::TypeConversion { expected: "Text (JSON array)", actual: format!("{:?}", other) }),
+                other => Err(Error::TypeConversion {
+                    expected: "Text (JSON array)",
+                    actual:   format!("{:?}", other),
+                    error:    "Expected JSON array".to_string(),
+                }),
             }
         }
     }
@@ -499,7 +542,11 @@ mod arrays_impl {
                     Ok(parsed)
                 }
                 Value::Null => Err(Error::UnexpectedNull),
-                other => Err(Error::TypeConversion { expected: "Text (JSON array)", actual: format!("{:?}", other) }),
+                other => Err(Error::TypeConversion {
+                    expected: "Text (JSON array)",
+                    actual:   format!("{:?}", other),
+                    error:    "Expected JSON array".to_string(),
+                }),
             }
         }
     }
@@ -521,7 +568,11 @@ mod arrays_impl {
                     Ok(parsed)
                 }
                 Value::Null => Err(Error::UnexpectedNull),
-                other => Err(Error::TypeConversion { expected: "Text (JSON array)", actual: format!("{:?}", other) }),
+                other => Err(Error::TypeConversion {
+                    expected: "Text (JSON array)",
+                    actual:   format!("{:?}", other),
+                    error:    "Expected JSON array".to_string(),
+                }),
             }
         }
     }
@@ -543,7 +594,11 @@ mod arrays_impl {
                     Ok(parsed)
                 }
                 Value::Null => Err(Error::UnexpectedNull),
-                other => Err(Error::TypeConversion { expected: "Text (JSON array)", actual: format!("{:?}", other) }),
+                other => Err(Error::TypeConversion {
+                    expected: "Text (JSON array)",
+                    actual:   format!("{:?}", other),
+                    error:    "Expected JSON array".to_string(),
+                }),
             }
         }
     }
@@ -565,7 +620,11 @@ mod arrays_impl {
                     Ok(parsed)
                 }
                 Value::Null => Err(Error::UnexpectedNull),
-                other => Err(Error::TypeConversion { expected: "Text (JSON array)", actual: format!("{:?}", other) }),
+                other => Err(Error::TypeConversion {
+                    expected: "Text (JSON array)",
+                    actual:   format!("{:?}", other),
+                    error:    "Expected JSON array".to_string(),
+                }),
             }
         }
     }
